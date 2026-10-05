@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Partner extends Model
 {
+    protected $table = 'partenaires';
+
     protected $fillable = [
         'owner_user_id', 'type', 'company_name', 'rccm', 'nif', 'manager_name',
         'address', 'city', 'logo_path', 'phone', 'whatsapp', 'website',

@@ -17,6 +17,10 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \App\Http\Middleware\EnsureRole::class,
         ]);
 
+        $middleware->appendToGroup('api', [
+            \App\Http\Middleware\AssignAuditRequestId::class,
+        ]);
+
         $middleware->statefulApi();
     })
     ->withExceptions(function (Exceptions $exceptions): void {

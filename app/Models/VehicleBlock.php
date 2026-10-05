@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class VehicleBlock extends Model
 {
+    protected $table = 'blocages_vehicules';
+
     protected $fillable = ['vehicle_id', 'starts_at', 'ends_at', 'reason'];
 
     protected function casts(): array

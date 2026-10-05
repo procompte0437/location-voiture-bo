@@ -39,7 +39,7 @@ class VehicleSearchController extends Controller
         ]);
 
         $query = Vehicle::query()
-            ->with(['partner', 'media', 'agency.location'])
+            ->with(['partner', 'media', 'agency.location', 'categoryInfo'])
             ->where('status', VehicleStatus::Published)
             ->whereHas('partner', fn ($q) => $q->where('status', PartnerStatus::Approved));
 
@@ -132,12 +132,18 @@ class VehicleSearchController extends Controller
 
         $sort = $data['sort'] ?? 'price';
         match ($sort) {
-            'rating' => $query->join('partners', 'vehicles.partner_id', '=', 'partners.id')
-                ->orderByDesc('partners.average_rating')
-                ->select('vehicles.*'),
-            'popularity' => $query->join('partners', 'vehicles.partner_id', '=', 'partners.id')
-                ->orderByDesc('partners.reviews_count')
-                ->select('vehicles.*'),
+            'rating' => $query->orderByDesc(
+                \App\Models\Partner::query()
+                    ->select('average_rating')
+                    ->whereColumn('partenaires.id', 'vehicules.partner_id')
+                    ->limit(1)
+            ),
+            'popularity' => $query->orderByDesc(
+                \App\Models\Partner::query()
+                    ->select('reviews_count')
+                    ->whereColumn('partenaires.id', 'vehicules.partner_id')
+                    ->limit(1)
+            ),
             default => $query->orderBy('price_per_day'),
         };
 
@@ -156,7 +162,7 @@ class VehicleSearchController extends Controller
 
     public function show(int $id): JsonResponse
     {
-        $vehicle = Vehicle::with(['partner', 'media', 'agency.location', 'pricingRules'])
+        $vehicle = Vehicle::with(['partner', 'media', 'agency.location', 'pricingRules', 'categoryInfo'])
             ->where('status', VehicleStatus::Published)
             ->findOrFail($id);
 
@@ -192,6 +198,7 @@ class VehicleSearchController extends Controller
             'display_name' => $vehicle->display_name,
             'year' => $vehicle->year,
             'category' => $vehicle->category,
+            'category_label' => $vehicle->categoryInfo?->label ?? $vehicle->category,
             'seats' => $vehicle->seats,
             'doors' => $vehicle->doors,
             'luggage' => $vehicle->luggage,

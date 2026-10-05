@@ -38,11 +38,12 @@ class AdminController extends Controller
     public function partners(Request $request): JsonResponse
     {
         $status = $request->query('status');
+        $perPage = min(100, max(1, (int) $request->query('per_page', 20)));
 
         $partners = Partner::with('owner')
             ->when($status, fn ($q) => $q->where('status', $status))
             ->latest()
-            ->paginate(20);
+            ->paginate($perPage);
 
         return response()->json($partners);
     }
@@ -166,17 +167,262 @@ class AdminController extends Controller
 
     public function users(Request $request): JsonResponse
     {
+        $role = $request->query('role');
+
         $users = User::query()
-            ->when($request->query('role'), fn ($q, $role) => $q->where('role', $request->query('role')))
+            ->when($role, fn ($q) => $q->where('role', $role))
+            ->with('ownedPartner')
             ->latest()
-            ->paginate(20);
+            ->paginate(30);
 
         return response()->json($users);
     }
 
+    public function vehicles(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'status' => ['nullable', 'string'],
+            'category' => ['nullable', 'string'],
+            'partner_id' => ['nullable', 'integer', 'exists:partenaires,id'],
+            'transmission' => ['nullable', 'in:manual,automatic'],
+            'fuel' => ['nullable', 'in:petrol,diesel,hybrid,electric'],
+            'q' => ['nullable', 'string', 'max:120'],
+            'min_price' => ['nullable', 'integer', 'min:0'],
+            'max_price' => ['nullable', 'integer', 'min:0'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:50'],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $vehicles = Vehicle::with(['partner', 'media', 'categoryInfo', 'agency'])
+            ->when(! empty($data['status']), fn ($q) => $q->where('status', $data['status']))
+            ->when(! empty($data['category']), fn ($q) => $q->where('category', $data['category']))
+            ->when(! empty($data['partner_id']), fn ($q) => $q->where('partner_id', $data['partner_id']))
+            ->when(! empty($data['transmission']), fn ($q) => $q->where('transmission', $data['transmission']))
+            ->when(! empty($data['fuel']), fn ($q) => $q->where('fuel', $data['fuel']))
+            ->when(isset($data['min_price']), fn ($q) => $q->where('price_per_day', '>=', $data['min_price']))
+            ->when(isset($data['max_price']), fn ($q) => $q->where('price_per_day', '<=', $data['max_price']))
+            ->when(! empty($data['q']), function ($q) use ($data) {
+                $term = $data['q'];
+                $q->where(function ($inner) use ($term) {
+                    $inner->where('brand', 'ilike', "%{$term}%")
+                        ->orWhere('model', 'ilike', "%{$term}%")
+                        ->orWhere('plate_number', 'ilike', "%{$term}%");
+                });
+            })
+            ->latest()
+            ->paginate($data['per_page'] ?? 12);
+
+        return response()->json($vehicles);
+    }
+
+    public function showVehicle(int $id): JsonResponse
+    {
+        $vehicle = Vehicle::with(['partner.owner', 'media', 'categoryInfo', 'agency'])
+            ->findOrFail($id);
+
+        return response()->json(['data' => $vehicle]);
+    }
+
+    public function storeVehicle(Request $request): JsonResponse
+    {
+        $data = $this->validateVehicle($request);
+        $coverUrl = $data['cover_url'] ?? null;
+        unset($data['cover_url']);
+        $data['status'] = $data['status'] ?? VehicleStatus::Published->value;
+
+        $vehicle = Vehicle::create($data);
+
+        if ($coverUrl) {
+            $vehicle->media()->create([
+                'url' => $coverUrl,
+                'sort_order' => 0,
+                'is_cover' => true,
+            ]);
+        }
+
+        $this->audit->log('vehicle.created', $vehicle, null, $vehicle->toArray());
+
+        return response()->json(['data' => $vehicle->load(['partner', 'media', 'categoryInfo'])], 201);
+    }
+
+    public function updateVehicle(Request $request, int $id): JsonResponse
+    {
+        $vehicle = Vehicle::with('media')->findOrFail($id);
+        $before = $vehicle->toArray();
+        $data = $this->validateVehicle($request, $vehicle->id);
+        $coverUrl = $data['cover_url'] ?? null;
+        unset($data['cover_url']);
+
+        $vehicle->update($data);
+
+        if ($coverUrl !== null) {
+            $cover = $vehicle->media()->where('is_cover', true)->first()
+                ?? $vehicle->media()->first();
+
+            if ($cover) {
+                $cover->update(['url' => $coverUrl, 'is_cover' => true]);
+            } elseif ($coverUrl !== '') {
+                $vehicle->media()->create([
+                    'url' => $coverUrl,
+                    'sort_order' => 0,
+                    'is_cover' => true,
+                ]);
+            }
+        }
+
+        $vehicle->load(['partner', 'media', 'categoryInfo', 'agency']);
+        $this->audit->log('vehicle.updated', $vehicle, $before, $vehicle->toArray());
+
+        return response()->json(['data' => $vehicle]);
+    }
+
+    public function destroyVehicle(int $id): JsonResponse
+    {
+        $vehicle = Vehicle::findOrFail($id);
+        $before = $vehicle->toArray();
+        $vehicle->media()->delete();
+        $vehicle->delete();
+        $this->audit->log('vehicle.deleted', null, $before, null);
+
+        return response()->json(['message' => 'Véhicule supprimé.']);
+    }
+
+    private function validateVehicle(Request $request, ?int $vehicleId = null): array
+    {
+        $plateRule = $vehicleId
+            ? 'unique:vehicules,plate_number,'.$vehicleId
+            : 'unique:vehicules,plate_number';
+
+        return $request->validate([
+            'partner_id' => [$vehicleId ? 'sometimes' : 'required', 'integer', 'exists:partenaires,id'],
+            'agency_id' => ['nullable', 'integer', 'exists:agences,id'],
+            'brand' => [$vehicleId ? 'sometimes' : 'required', 'string', 'max:80'],
+            'model' => [$vehicleId ? 'sometimes' : 'required', 'string', 'max:80'],
+            'year' => ['nullable', 'integer', 'min:1990', 'max:2100'],
+            'category' => [$vehicleId ? 'sometimes' : 'required', 'in:city_car,sedan,suv,4x4,pickup,minibus,utility,luxury'],
+            'plate_number' => [$vehicleId ? 'sometimes' : 'required', 'string', 'max:30', $plateRule],
+            'color' => ['nullable', 'string', 'max:40'],
+            'seats' => [$vehicleId ? 'sometimes' : 'required', 'integer', 'min:2', 'max:50'],
+            'doors' => ['nullable', 'integer', 'min:2', 'max:6'],
+            'luggage' => ['nullable', 'integer', 'min:0', 'max:20'],
+            'transmission' => [$vehicleId ? 'sometimes' : 'required', 'in:manual,automatic'],
+            'fuel' => [$vehicleId ? 'sometimes' : 'required', 'in:petrol,diesel,hybrid,electric'],
+            'air_conditioning' => ['boolean'],
+            'included_km' => ['nullable', 'integer', 'min:0'],
+            'deposit_amount' => ['nullable', 'integer', 'min:0'],
+            'min_driver_age' => ['nullable', 'integer', 'min:18', 'max:80'],
+            'min_license_years' => ['nullable', 'integer', 'min:0', 'max:20'],
+            'booking_mode' => ['nullable', 'in:instant,on_request'],
+            'cancellation_policy' => ['nullable', 'in:flexible,moderate,strict'],
+            'price_per_day' => [$vehicleId ? 'sometimes' : 'required', 'integer', 'min:1000'],
+            'description' => ['nullable', 'string'],
+            'airport_delivery' => ['boolean'],
+            'free_cancellation' => ['boolean'],
+            'with_driver_available' => ['boolean'],
+            'status' => ['nullable', 'in:draft,pending_validation,published,suspended,archived'],
+            'cover_url' => ['nullable', 'url', 'max:500'],
+        ]);
+    }
+
+    public function locations(): JsonResponse
+    {
+        $locations = \App\Models\Location::query()
+            ->orderByDesc('is_popular')
+            ->orderBy('name')
+            ->get();
+
+        return response()->json(['data' => $locations]);
+    }
+
+    public function storeLocation(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:190'],
+            'slug' => ['nullable', 'string', 'max:190', 'unique:lieux,slug'],
+            'type' => ['required', 'in:city,airport,district,agency_point'],
+            'city' => ['nullable', 'string', 'max:120'],
+            'latitude' => ['nullable', 'numeric'],
+            'longitude' => ['nullable', 'numeric'],
+            'is_popular' => ['boolean'],
+            'is_active' => ['boolean'],
+        ]);
+
+        if (empty($data['slug'])) {
+            $data['slug'] = \Illuminate\Support\Str::slug($data['name']);
+        }
+
+        $location = \App\Models\Location::create([
+            ...$data,
+            'is_popular' => $data['is_popular'] ?? false,
+            'is_active' => $data['is_active'] ?? true,
+        ]);
+
+        $this->audit->log('location.created', $location, null, $location->toArray());
+
+        return response()->json(['data' => $location], 201);
+    }
+
+    public function updateLocation(Request $request, int $id): JsonResponse
+    {
+        $location = \App\Models\Location::findOrFail($id);
+        $before = $location->toArray();
+
+        $data = $request->validate([
+            'name' => ['sometimes', 'string', 'max:190'],
+            'slug' => ['sometimes', 'string', 'max:190', 'unique:lieux,slug,'.$id],
+            'type' => ['sometimes', 'in:city,airport,district,agency_point'],
+            'city' => ['nullable', 'string', 'max:120'],
+            'latitude' => ['nullable', 'numeric'],
+            'longitude' => ['nullable', 'numeric'],
+            'is_popular' => ['boolean'],
+            'is_active' => ['boolean'],
+        ]);
+
+        $location->update($data);
+        $this->audit->log('location.updated', $location, $before, $location->toArray());
+
+        return response()->json(['data' => $location]);
+    }
+
+    public function deleteLocation(int $id): JsonResponse
+    {
+        $location = \App\Models\Location::findOrFail($id);
+        $before = $location->toArray();
+        $location->delete();
+        $this->audit->log('location.deleted', null, $before, null);
+
+        return response()->json(['message' => 'Lieu supprimé.']);
+    }
+
+    public function updateUserStatus(Request $request, int $id): JsonResponse
+    {
+        $data = $request->validate([
+            'status' => ['required', 'in:active,suspended,banned'],
+        ]);
+
+        $user = User::findOrFail($id);
+        $before = $user->only(['id', 'email', 'status', 'role']);
+        $user->update(['status' => $data['status']]);
+        $this->audit->log('user.status_updated', $user, $before, $user->only(['id', 'email', 'status', 'role']));
+
+        return response()->json(['data' => $user]);
+    }
+
+    public function unpublishVehicle(Request $request, int $id): JsonResponse
+    {
+        $vehicle = Vehicle::findOrFail($id);
+        $before = $vehicle->toArray();
+        $vehicle->update(['status' => VehicleStatus::Suspended]);
+        $this->audit->log('vehicle.unpublished', $vehicle, $before, $vehicle->toArray());
+
+        return response()->json(['data' => $vehicle]);
+    }
+
     public function bookings(): JsonResponse
     {
-        $bookings = Booking::with(['vehicle', 'partner', 'customer'])->latest()->paginate(20);
+        $bookings = Booking::with(['vehicle', 'partner', 'customer', 'pickupLocation'])
+            ->latest()
+            ->paginate(30);
 
         return response()->json($bookings);
     }

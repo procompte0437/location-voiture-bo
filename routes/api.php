@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\Admin\AdminController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BookingController;
+use App\Http\Controllers\Api\CatalogController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\Partner\PartnerController;
 use App\Http\Controllers\Api\VehicleSearchController;
@@ -18,6 +19,11 @@ Route::prefix('v1')->group(function () {
 
     Route::get('/locations/autocomplete', [LocationController::class, 'autocomplete']);
     Route::get('/locations/popular', [LocationController::class, 'popular']);
+
+    Route::get('/catalog/home', [CatalogController::class, 'home']);
+    Route::get('/catalog/categories', [CatalogController::class, 'categories']);
+    Route::get('/catalog/labels', [CatalogController::class, 'labels']);
+    Route::get('/catalog/faq', [CatalogController::class, 'faq']);
 
     Route::get('/vehicles/search', [VehicleSearchController::class, 'search']);
     Route::get('/vehicles/{id}', [VehicleSearchController::class, 'show']);
@@ -57,10 +63,22 @@ Route::prefix('v1')->group(function () {
             Route::post('/partners/{id}/reject', [AdminController::class, 'rejectPartner']);
             Route::post('/partners/{id}/request-info', [AdminController::class, 'requestPartnerInfo']);
             Route::post('/partners/{id}/suspend', [AdminController::class, 'suspendPartner']);
+            Route::get('/vehicles', [AdminController::class, 'vehicles']);
+            Route::post('/vehicles', [AdminController::class, 'storeVehicle']);
+            Route::get('/vehicles/{id}', [AdminController::class, 'showVehicle']);
+            Route::put('/vehicles/{id}', [AdminController::class, 'updateVehicle']);
+            Route::patch('/vehicles/{id}', [AdminController::class, 'updateVehicle']);
+            Route::delete('/vehicles/{id}', [AdminController::class, 'destroyVehicle']);
             Route::post('/vehicles/{id}/approve', [AdminController::class, 'approveVehicle']);
             Route::post('/vehicles/{id}/reject', [AdminController::class, 'rejectVehicle']);
+            Route::post('/vehicles/{id}/unpublish', [AdminController::class, 'unpublishVehicle']);
             Route::get('/users', [AdminController::class, 'users']);
+            Route::patch('/users/{id}/status', [AdminController::class, 'updateUserStatus']);
             Route::get('/bookings', [AdminController::class, 'bookings']);
+            Route::get('/locations', [AdminController::class, 'locations']);
+            Route::post('/locations', [AdminController::class, 'storeLocation']);
+            Route::patch('/locations/{id}', [AdminController::class, 'updateLocation']);
+            Route::delete('/locations/{id}', [AdminController::class, 'deleteLocation']);
             Route::get('/audit-logs', [AdminController::class, 'auditLogs']);
         });
     });

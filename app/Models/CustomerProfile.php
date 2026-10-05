@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CustomerProfile extends Model
 {
+    protected $table = 'profils_clients';
+
     protected $fillable = [
         'user_id', 'first_name', 'last_name', 'birth_date', 'nationality',
         'address', 'city', 'license_number', 'license_obtained_at',

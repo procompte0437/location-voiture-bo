@@ -77,6 +77,10 @@ class AuthController extends Controller
         $user->update(['last_login_at' => now()]);
         $token = $user->createToken('api')->plainTextToken;
 
+        $this->audit->log('auth.login', $user, null, [
+            'role' => $user->role instanceof \BackedEnum ? $user->role->value : $user->role,
+        ], $user->id);
+
         return response()->json([
             'user' => $user->load('customerProfile', 'ownedPartner'),
             'token' => $token,
@@ -92,7 +96,9 @@ class AuthController extends Controller
 
     public function logout(Request $request): JsonResponse
     {
-        $request->user()->currentAccessToken()->delete();
+        $user = $request->user();
+        $this->audit->log('auth.logout', $user, null, null, $user->id);
+        $user->currentAccessToken()->delete();
 
         return response()->json(['message' => 'Déconnecté.']);
     }

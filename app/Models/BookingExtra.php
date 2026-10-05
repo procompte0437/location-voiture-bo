@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class BookingExtra extends Model
 {
+    protected $table = 'extras_reservations';
+
     protected $fillable = [
         'booking_id', 'extra_id', 'quantity', 'unit_price', 'total_price',
     ];

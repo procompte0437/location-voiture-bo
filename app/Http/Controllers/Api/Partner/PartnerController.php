@@ -115,7 +115,7 @@ class PartnerController extends Controller
             'model' => ['required', 'string', 'max:80'],
             'year' => ['nullable', 'integer', 'min:1990', 'max:2100'],
             'category' => ['required', 'in:city_car,sedan,suv,4x4,pickup,minibus,utility,luxury'],
-            'plate_number' => ['required', 'string', 'max:30', 'unique:vehicles,plate_number'],
+            'plate_number' => ['required', 'string', 'max:30', 'unique:vehicules,plate_number'],
             'color' => ['nullable', 'string', 'max:40'],
             'seats' => ['required', 'integer', 'min:2', 'max:50'],
             'doors' => ['nullable', 'integer', 'min:2', 'max:6'],
@@ -134,7 +134,7 @@ class PartnerController extends Controller
             'airport_delivery' => ['boolean'],
             'free_cancellation' => ['boolean'],
             'with_driver_available' => ['boolean'],
-            'agency_id' => ['nullable', 'exists:agencies,id'],
+            'agency_id' => ['nullable', 'exists:agences,id'],
             'cover_url' => ['nullable', 'url'],
         ]);
 

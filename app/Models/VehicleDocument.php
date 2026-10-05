@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class VehicleDocument extends Model
 {
+    protected $table = 'documents_vehicules';
+
     protected $fillable = ['vehicle_id', 'type', 'file_path', 'expires_at', 'status'];
 
     protected function casts(): array

@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Agency extends Model
 {
+    protected $table = 'agences';
+
     protected $fillable = [
         'partner_id', 'location_id', 'name', 'address', 'city',
         'latitude', 'longitude', 'opening_hours', 'closed_days',

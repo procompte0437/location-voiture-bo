@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Extra extends Model
 {
+    protected $table = 'options_extras';
+
     protected $fillable = [
         'partner_id', 'name', 'slug', 'price', 'billing_type', 'is_active',
     ];

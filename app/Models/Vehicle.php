@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Vehicle extends Model
 {
+    protected $table = 'vehicules';
+
     protected $fillable = [
         'partner_id', 'agency_id', 'brand', 'model', 'year', 'category',
         'plate_number', 'color', 'seats', 'doors', 'luggage', 'transmission',
@@ -35,6 +37,11 @@ class Vehicle extends Model
     public function partner(): BelongsTo
     {
         return $this->belongsTo(Partner::class);
+    }
+
+    public function categoryInfo(): BelongsTo
+    {
+        return $this->belongsTo(VehicleCategory::class, 'category', 'slug');
     }
 
     public function agency(): BelongsTo

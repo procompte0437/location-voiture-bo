@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Location extends Model
 {
+    protected $table = 'lieux';
+
     protected $fillable = [
         'name', 'slug', 'type', 'city', 'latitude', 'longitude', 'is_popular', 'is_active',
     ];
