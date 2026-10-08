@@ -19,7 +19,7 @@ class VehicleSearchController extends Controller
     public function search(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'location_id' => ['nullable', 'exists:locations,id'],
+            'location_id' => ['nullable', 'exists:lieux,id'],
             'q' => ['nullable', 'string', 'max:120'],
             'pickup_at' => ['nullable', 'date'],
             'return_at' => ['nullable', 'date', 'after:pickup_at'],

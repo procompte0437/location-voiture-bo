@@ -137,13 +137,12 @@ class BookingService
                 'paid_at' => now(),
             ]);
 
-            $newStatus = $booking->vehicle->booking_mode === 'on_request'
-                ? BookingStatus::PendingPartner
-                : BookingStatus::Confirmed;
+            // Après paiement / demande : en attente du commercial / partenaire.
+            $newStatus = BookingStatus::PendingPartner;
 
             $booking->update([
                 'status' => $newStatus,
-                'confirmed_at' => $newStatus === BookingStatus::Confirmed ? now() : null,
+                'confirmed_at' => null,
                 'locked_until' => null,
             ]);
 

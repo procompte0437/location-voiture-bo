@@ -8,11 +8,15 @@ use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Booking;
 use App\Models\Partner;
+use App\Models\ReferenceList;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Models\VehicleCategory;
 use App\Services\AuditService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class AdminController extends Controller
 {
@@ -336,10 +340,23 @@ class AdminController extends Controller
 
     public function storeLocation(Request $request): JsonResponse
     {
+        $typesLieu = ReferenceList::query()
+            ->where('type', 'location_type')
+            ->where('is_active', true)
+            ->pluck('slug')
+            ->all();
+
         $data = $request->validate([
             'name' => ['required', 'string', 'max:190'],
             'slug' => ['nullable', 'string', 'max:190', 'unique:lieux,slug'],
-            'type' => ['required', 'in:city,airport,district,agency_point'],
+            'type' => [
+                'required',
+                'string',
+                'max:80',
+                $typesLieu
+                    ? Rule::in($typesLieu)
+                    : Rule::in(['city', 'airport', 'district', 'agency_point']),
+            ],
             'city' => ['nullable', 'string', 'max:120'],
             'latitude' => ['nullable', 'numeric'],
             'longitude' => ['nullable', 'numeric'],
@@ -367,10 +384,23 @@ class AdminController extends Controller
         $location = \App\Models\Location::findOrFail($id);
         $before = $location->toArray();
 
+        $typesLieu = ReferenceList::query()
+            ->where('type', 'location_type')
+            ->where('is_active', true)
+            ->pluck('slug')
+            ->all();
+
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:190'],
             'slug' => ['sometimes', 'string', 'max:190', 'unique:lieux,slug,'.$id],
-            'type' => ['sometimes', 'in:city,airport,district,agency_point'],
+            'type' => [
+                'sometimes',
+                'string',
+                'max:80',
+                $typesLieu
+                    ? Rule::in($typesLieu)
+                    : Rule::in(['city', 'airport', 'district', 'agency_point']),
+            ],
             'city' => ['nullable', 'string', 'max:120'],
             'latitude' => ['nullable', 'numeric'],
             'longitude' => ['nullable', 'numeric'],
@@ -432,5 +462,160 @@ class AdminController extends Controller
         $logs = AuditLog::with('actor')->latest()->paginate(50);
 
         return response()->json($logs);
+    }
+
+    public function references(Request $request): JsonResponse
+    {
+        $type = $request->query('type');
+        $parentSlug = $request->query('parent_slug');
+
+        $items = ReferenceList::query()
+            ->when($type, fn ($q) => $q->where('type', $type))
+            ->when($parentSlug, fn ($q) => $q->where('parent_slug', $parentSlug))
+            ->orderBy('type')
+            ->orderBy('sort_order')
+            ->orderBy('label')
+            ->get();
+
+        $types = ReferenceList::query()
+            ->select('type')
+            ->distinct()
+            ->orderBy('type')
+            ->pluck('type');
+
+        return response()->json([
+            'data' => $items,
+            'meta' => ['types' => $types],
+        ]);
+    }
+
+    public function storeReference(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'type' => ['required', 'string', 'max:80'],
+            'slug' => ['nullable', 'string', 'max:80'],
+            'label' => ['required', 'string', 'max:120'],
+            'parent_slug' => ['nullable', 'string', 'max:80'],
+            'sort_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
+            'is_active' => ['boolean'],
+        ]);
+
+        $slug = $data['slug'] ?: Str::slug($data['label']);
+        if ($slug === '') {
+            $slug = Str::slug($data['type'].'-'.uniqid());
+        }
+
+        $item = ReferenceList::create([
+            'type' => $data['type'],
+            'slug' => $slug,
+            'label' => $data['label'],
+            'parent_slug' => $data['parent_slug'] ?? null,
+            'sort_order' => $data['sort_order'] ?? 0,
+            'is_active' => $data['is_active'] ?? true,
+        ]);
+
+        $this->audit->log('reference.created', $item, null, $item->toArray());
+
+        return response()->json(['data' => $item], 201);
+    }
+
+    public function updateReference(Request $request, int $id): JsonResponse
+    {
+        $item = ReferenceList::findOrFail($id);
+        $before = $item->toArray();
+
+        $data = $request->validate([
+            'type' => ['sometimes', 'string', 'max:80'],
+            'slug' => ['sometimes', 'string', 'max:80'],
+            'label' => ['sometimes', 'string', 'max:120'],
+            'parent_slug' => ['nullable', 'string', 'max:80'],
+            'sort_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
+            'is_active' => ['boolean'],
+        ]);
+
+        $item->update($data);
+        $this->audit->log('reference.updated', $item, $before, $item->toArray());
+
+        return response()->json(['data' => $item]);
+    }
+
+    public function deleteReference(int $id): JsonResponse
+    {
+        $item = ReferenceList::findOrFail($id);
+        $before = $item->toArray();
+        $item->delete();
+        $this->audit->log('reference.deleted', null, $before, null);
+
+        return response()->json(['message' => 'Élément de référentiel supprimé.']);
+    }
+
+    public function vehicleCategories(): JsonResponse
+    {
+        $categories = VehicleCategory::query()
+            ->orderBy('sort_order')
+            ->orderBy('label')
+            ->get();
+
+        return response()->json(['data' => $categories]);
+    }
+
+    public function storeVehicleCategory(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'label' => ['required', 'string', 'max:120'],
+            'slug' => ['nullable', 'string', 'max:80', 'unique:categories_vehicules,slug'],
+            'description' => ['nullable', 'string', 'max:500'],
+            'sort_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
+            'is_active' => ['boolean'],
+            'show_on_home' => ['boolean'],
+        ]);
+
+        $slug = $data['slug'] ?: Str::slug($data['label']);
+        if ($slug === '') {
+            $slug = Str::slug('cat-'.uniqid());
+        }
+
+        $category = VehicleCategory::create([
+            'slug' => $slug,
+            'label' => $data['label'],
+            'description' => $data['description'] ?? null,
+            'sort_order' => $data['sort_order'] ?? 0,
+            'is_active' => $data['is_active'] ?? true,
+            'show_on_home' => $data['show_on_home'] ?? false,
+        ]);
+
+        $this->audit->log('vehicle_category.created', $category, null, $category->toArray());
+
+        return response()->json(['data' => $category], 201);
+    }
+
+    public function updateVehicleCategory(Request $request, int $id): JsonResponse
+    {
+        $category = VehicleCategory::findOrFail($id);
+        $before = $category->toArray();
+
+        $data = $request->validate([
+            'label' => ['sometimes', 'string', 'max:120'],
+            'slug' => ['sometimes', 'string', 'max:80', 'unique:categories_vehicules,slug,'.$id],
+            'description' => ['nullable', 'string', 'max:500'],
+            'sort_order' => ['nullable', 'integer', 'min:0', 'max:9999'],
+            'is_active' => ['boolean'],
+            'show_on_home' => ['boolean'],
+        ]);
+
+        $category->update($data);
+        $this->audit->log('vehicle_category.updated', $category, $before, $category->toArray());
+
+        return response()->json(['data' => $category]);
+    }
+
+    public function deleteVehicleCategory(int $id): JsonResponse
+    {
+        $category = VehicleCategory::findOrFail($id);
+        $before = $category->toArray();
+        $category->delete();
+        $this->audit->log('vehicle_category.deleted', null, $before, null);
+
+        return response()->json(['message' => 'Catégorie supprimée.']);
     }
 }
