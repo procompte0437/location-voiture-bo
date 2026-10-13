@@ -123,8 +123,9 @@ class VehicleSearchController extends Controller
                 'data' => $items,
                 'meta' => [
                     'total' => $total,
-                    'page' => $page,
-                    'per_page' => $perPage,
+                    'page' => (int) $page,
+                    'per_page' => (int) $perPage,
+                    'last_page' => (int) max(1, (int) ceil($total / $perPage)),
                     'days' => $days,
                 ],
             ]);
@@ -155,6 +156,7 @@ class VehicleSearchController extends Controller
                 'total' => $paginator->total(),
                 'page' => $paginator->currentPage(),
                 'per_page' => $paginator->perPage(),
+                'last_page' => $paginator->lastPage(),
                 'days' => null,
             ],
         ]);

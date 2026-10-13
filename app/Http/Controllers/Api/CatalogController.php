@@ -81,6 +81,7 @@ class CatalogController extends Controller
                 'location_type' => $grouped['location_type'] ?? [],
                 'marque' => $grouped['marque'] ?? [],
                 'modele' => $grouped['modele'] ?? [],
+                'vehicle_sort' => $grouped['vehicle_sort'] ?? [],
             ],
         ]);
     }

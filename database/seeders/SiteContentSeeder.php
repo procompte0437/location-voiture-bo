@@ -90,6 +90,10 @@ class SiteContentSeeder extends Seeder
             ['type' => 'payment_method', 'slug' => 'moov_money', 'label' => 'Moov Money', 'sort_order' => 2],
             ['type' => 'payment_method', 'slug' => 'card', 'label' => 'Carte bancaire', 'sort_order' => 3],
             ['type' => 'payment_method', 'slug' => 'agency_cash', 'label' => 'Acompte + paiement agence', 'sort_order' => 4],
+            // Tris du catalogue public (slug = clé de tri API : price|rating|popularity)
+            ['type' => 'vehicle_sort', 'slug' => 'price', 'label' => 'Prix croissant', 'sort_order' => 1],
+            ['type' => 'vehicle_sort', 'slug' => 'rating', 'label' => 'Note partenaire', 'sort_order' => 2],
+            ['type' => 'vehicle_sort', 'slug' => 'popularity', 'label' => 'Popularité', 'sort_order' => 3],
             // Marques
             ['type' => 'marque', 'slug' => 'toyota', 'label' => 'Toyota', 'sort_order' => 10],
             ['type' => 'marque', 'slug' => 'hyundai', 'label' => 'Hyundai', 'sort_order' => 20],
