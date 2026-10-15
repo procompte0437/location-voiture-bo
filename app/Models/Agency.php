@@ -11,7 +11,7 @@ class Agency extends Model
     protected $table = 'agences';
 
     protected $fillable = [
-        'partner_id', 'location_id', 'name', 'address', 'city',
+        'partner_id', 'location_id', 'name', 'address', 'city', 'province_slug',
         'latitude', 'longitude', 'opening_hours', 'closed_days',
         'after_hours_fee', 'is_active',
     ];

@@ -62,6 +62,7 @@ class VehicleSeeder extends Seeder
                 'location_id' => $airport?->id,
                 'address' => 'Aéroport international Léon-Mba',
                 'city' => 'Libreville',
+                'province_slug' => 'estuaire',
                 'latitude' => 0.4586,
                 'longitude' => 9.4123,
                 'opening_hours' => [
@@ -76,6 +77,9 @@ class VehicleSeeder extends Seeder
                 'is_active' => true,
             ]
         );
+        if (! $agency->province_slug) {
+            $agency->update(['province_slug' => 'estuaire']);
+        }
 
         // Au moins un véhicule par catégorie active de la plateforme
         $fleet = [
@@ -194,7 +198,7 @@ class VehicleSeeder extends Seeder
                     'fuel_policy' => 'full_to_full',
                     'features' => ['GPS', 'Bluetooth', 'USB'],
                     'status' => VehicleStatus::Published,
-                    'description' => 'Véhicule récent, entretenu et assuré. Idéal pour vos déplacements au Gabon.',
+                    'description' => 'Véhicule récent, entretenu et assuré. Idéal pour vos déplacements .',
                     'with_driver_available' => $item['with_driver_available'] ?? false,
                     'airport_delivery' => $item['airport_delivery'] ?? false,
                     'free_cancellation' => $item['free_cancellation'] ?? false,

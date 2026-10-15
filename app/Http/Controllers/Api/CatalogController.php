@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Enums\PartnerStatus;
 use App\Enums\VehicleStatus;
 use App\Http\Controllers\Controller;
+use App\Models\Agency;
 use App\Models\Faq;
 use App\Models\ReassuranceArgument;
 use App\Models\ReferenceList;
@@ -12,6 +13,7 @@ use App\Models\SiteContent;
 use App\Models\Vehicle;
 use App\Models\VehicleCategory;
 use App\Services\BookingService;
+use App\Support\ProvincesGabon;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -196,5 +198,98 @@ class CatalogController extends Controller
             ->get(['id', 'question', 'answer', 'sort_order']);
 
         return response()->json(['data' => $faqs]);
+    }
+
+    /** Liste des 9 provinces avec le nombre d’agences actives (carte accueil). */
+    public function provinces(): JsonResponse
+    {
+        $compteurs = Agency::query()
+            ->where('is_active', true)
+            ->whereHas('partner', fn ($q) => $q->where('status', PartnerStatus::Approved))
+            ->selectRaw('province_slug, count(*) as total')
+            ->groupBy('province_slug')
+            ->pluck('total', 'province_slug');
+
+        $data = array_map(function (array $province) use ($compteurs) {
+            $total = (int) ($compteurs[$province['slug']] ?? 0);
+
+            return [
+                ...$province,
+                'agences_count' => $total,
+                'has_agences' => $total > 0,
+            ];
+        }, ProvincesGabon::toutes());
+
+        return response()->json(['data' => $data]);
+    }
+
+    /**
+     * Détail d’une province : agences actives + catégories de véhicules disponibles.
+     */
+    public function province(string $slug): JsonResponse
+    {
+        $province = ProvincesGabon::trouver($slug);
+        if (! $province) {
+            return response()->json(['message' => 'Province introuvable.'], 404);
+        }
+
+        $agences = Agency::query()
+            ->with(['partner:id,company_name,manager_name,status,city', 'location:id,name,type'])
+            ->where('province_slug', $slug)
+            ->where('is_active', true)
+            ->whereHas('partner', fn ($q) => $q->where('status', PartnerStatus::Approved))
+            ->orderBy('name')
+            ->get()
+            ->map(fn (Agency $a) => [
+                'id' => $a->id,
+                'name' => $a->name,
+                'address' => $a->address,
+                'city' => $a->city,
+                'province_slug' => $a->province_slug,
+                'partner_name' => $a->partner?->company_name ?: $a->partner?->manager_name,
+                'location_name' => $a->location?->name,
+            ])
+            ->values();
+
+        $slugsCategories = Vehicle::query()
+            ->where('status', VehicleStatus::Published)
+            ->whereHas('partner', fn ($q) => $q->where('status', PartnerStatus::Approved))
+            ->where(function ($q) use ($slug) {
+                $q->whereHas('agency', fn ($aq) => $aq->where('province_slug', $slug)->where('is_active', true))
+                    ->orWhere(function ($qq) use ($slug) {
+                        // Véhicules sans agence : partenaires dont la ville = chef-lieu de province.
+                        $province = ProvincesGabon::trouver($slug);
+                        $chef = $province['chef_lieu'] ?? null;
+                        if ($chef) {
+                            $qq->whereNull('agency_id')
+                                ->whereHas('partner', fn ($pq) => $pq->where('city', 'like', "%{$chef}%"));
+                        } else {
+                            $qq->whereRaw('1 = 0');
+                        }
+                    });
+            })
+            ->distinct()
+            ->pluck('category')
+            ->filter()
+            ->values()
+            ->all();
+
+        $categories = VehicleCategory::query()
+            ->where('is_active', true)
+            ->when(
+                count($slugsCategories) > 0,
+                fn ($q) => $q->whereIn('slug', $slugsCategories),
+                fn ($q) => $q->whereRaw('1 = 0'),
+            )
+            ->orderBy('sort_order')
+            ->get(['id', 'slug', 'label', 'description']);
+
+        return response()->json([
+            'data' => [
+                'province' => $province,
+                'agences' => $agences,
+                'categories' => $categories,
+            ],
+        ]);
     }
 }

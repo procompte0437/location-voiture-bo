@@ -26,6 +26,8 @@ Route::prefix('v1')->group(function () {
     Route::get('/catalog/references', [CatalogController::class, 'references']);
     Route::get('/catalog/vehicles', [CatalogController::class, 'vehicles']);
     Route::get('/catalog/faq', [CatalogController::class, 'faq']);
+    Route::get('/catalog/provinces', [CatalogController::class, 'provinces']);
+    Route::get('/catalog/provinces/{slug}', [CatalogController::class, 'province']);
 
     Route::get('/vehicles/search', [VehicleSearchController::class, 'search']);
     Route::get('/vehicles/{id}', [VehicleSearchController::class, 'show']);
@@ -113,6 +115,11 @@ Route::prefix('v1')->group(function () {
             Route::post('/partners/{id}/suspend', [AdminController::class, 'suspendPartner']);
             Route::get('/users', [AdminController::class, 'users']);
             Route::patch('/users/{id}/status', [AdminController::class, 'updateUserStatus']);
+            // Agences par province (carte accueil) — super admin.
+            Route::get('/agences', [AdminController::class, 'agences']);
+            Route::post('/agences', [AdminController::class, 'storeAgence']);
+            Route::patch('/agences/{id}', [AdminController::class, 'updateAgence']);
+            Route::delete('/agences/{id}', [AdminController::class, 'deleteAgence']);
         });
     });
 });

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Enums\PartnerStatus;
 use App\Enums\VehicleStatus;
 use App\Http\Controllers\Controller;
+use App\Models\Agency;
 use App\Models\AuditLog;
 use App\Models\Booking;
 use App\Models\Partner;
@@ -13,6 +14,7 @@ use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\VehicleCategory;
 use App\Services\AuditService;
+use App\Support\ProvincesGabon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -617,5 +619,80 @@ class AdminController extends Controller
         $this->audit->log('vehicle_category.deleted', null, $before, null);
 
         return response()->json(['message' => 'Catégorie supprimée.']);
+    }
+
+    /** Liste des agences (carte provinces / super admin). */
+    public function agences(Request $request): JsonResponse
+    {
+        $province = $request->query('province_slug');
+
+        $items = Agency::query()
+            ->with(['partner:id,company_name,manager_name', 'location:id,name'])
+            ->when($province, fn ($q) => $q->where('province_slug', $province))
+            ->orderBy('province_slug')
+            ->orderBy('name')
+            ->get();
+
+        return response()->json([
+            'data' => $items,
+            'meta' => ['provinces' => ProvincesGabon::toutes()],
+        ]);
+    }
+
+    public function storeAgence(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'partner_id' => ['required', 'exists:partenaires,id'],
+            'location_id' => ['nullable', 'exists:lieux,id'],
+            'name' => ['required', 'string', 'max:190'],
+            'address' => ['required', 'string', 'max:255'],
+            'city' => ['required', 'string', 'max:120'],
+            'province_slug' => ['required', 'string', Rule::in(ProvincesGabon::slugs())],
+            'latitude' => ['nullable', 'numeric'],
+            'longitude' => ['nullable', 'numeric'],
+            'is_active' => ['boolean'],
+        ]);
+
+        $agence = Agency::create([
+            ...$data,
+            'is_active' => $data['is_active'] ?? true,
+        ]);
+
+        $this->audit->log('agency.created', $agence, null, $agence->toArray());
+
+        return response()->json(['data' => $agence->load(['partner', 'location'])], 201);
+    }
+
+    public function updateAgence(Request $request, int $id): JsonResponse
+    {
+        $agence = Agency::findOrFail($id);
+        $before = $agence->toArray();
+
+        $data = $request->validate([
+            'partner_id' => ['sometimes', 'exists:partenaires,id'],
+            'location_id' => ['nullable', 'exists:lieux,id'],
+            'name' => ['sometimes', 'string', 'max:190'],
+            'address' => ['sometimes', 'string', 'max:255'],
+            'city' => ['sometimes', 'string', 'max:120'],
+            'province_slug' => ['sometimes', 'string', Rule::in(ProvincesGabon::slugs())],
+            'latitude' => ['nullable', 'numeric'],
+            'longitude' => ['nullable', 'numeric'],
+            'is_active' => ['boolean'],
+        ]);
+
+        $agence->update($data);
+        $this->audit->log('agency.updated', $agence, $before, $agence->toArray());
+
+        return response()->json(['data' => $agence->fresh(['partner', 'location'])]);
+    }
+
+    public function deleteAgence(int $id): JsonResponse
+    {
+        $agence = Agency::findOrFail($id);
+        $before = $agence->toArray();
+        $agence->delete();
+        $this->audit->log('agency.deleted', null, $before, null);
+
+        return response()->json(['message' => 'Agence supprimée.']);
     }
 }

@@ -14,11 +14,11 @@ class SiteContentSeeder extends Seeder
     {
         $contents = [
             ['key' => 'home.hero_title', 'group' => 'home', 'value' => 'LocaGabon'],
-            ['key' => 'home.hero_eyebrow', 'group' => 'home', 'value' => 'Marketplace de location au Gabon'],
+            ['key' => 'home.hero_eyebrow', 'group' => 'home', 'value' => 'Marketplace de location'],
             ['key' => 'home.hero_subtitle', 'group' => 'home', 'value' => 'Comparez, réservez et payez votre véhicule en moins de 3 minutes — partenaires locaux vérifiés.'],
             ['key' => 'home.hero_promises', 'group' => 'home', 'value' => 'Véhicules récents · Assurance incluse · Livraison aéroport Léon-Mba / hôtel / domicile'],
             ['key' => 'home.hero_image_url', 'group' => 'home', 'value' => 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1800&q=80'],
-            ['key' => 'home.destinations_title', 'group' => 'home', 'value' => 'Agence de location de voiture au Gabon'],
+            ['key' => 'home.destinations_title', 'group' => 'home', 'value' => 'Agence de location de voiture'],
             ['key' => 'home.destinations_subtitle', 'group' => 'home', 'value' => 'Destinations populaires pour démarrer votre recherche.'],
             ['key' => 'home.categories_title', 'group' => 'home', 'value' => 'Catégories'],
             ['key' => 'home.categories_subtitle', 'group' => 'home', 'value' => 'De la citadine au 4x4 pour l’intérieur du pays.'],
