@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\Admin\AdminController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\CatalogController;
+use App\Http\Controllers\Api\ControleurContact;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\Partenaire\ControleurPartenaire;
 use App\Http\Controllers\Api\VehicleSearchController;
@@ -26,6 +27,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/catalog/references', [CatalogController::class, 'references']);
     Route::get('/catalog/vehicles', [CatalogController::class, 'vehicles']);
     Route::get('/catalog/faq', [CatalogController::class, 'faq']);
+    Route::post('/contact', [ControleurContact::class, 'enregistrer'])->middleware('throttle:8,1');
     Route::get('/catalog/provinces', [CatalogController::class, 'provinces']);
     Route::get('/catalog/provinces/{slug}', [CatalogController::class, 'province']);
 
@@ -90,6 +92,9 @@ Route::prefix('v1')->group(function () {
             Route::post('/vehicles/{id}/reject', [AdminController::class, 'rejectVehicle']);
             Route::post('/vehicles/{id}/unpublish', [AdminController::class, 'unpublishVehicle']);
             Route::get('/bookings', [AdminController::class, 'bookings']);
+            Route::post('/bookings/{id}/confirm', [AdminController::class, 'confirmBooking']);
+            Route::post('/bookings/{id}/cancel', [AdminController::class, 'cancelBooking']);
+            Route::post('/bookings/{id}/complete', [AdminController::class, 'completeBooking']);
             Route::get('/locations', [AdminController::class, 'locations']);
             Route::post('/locations', [AdminController::class, 'storeLocation']);
             Route::patch('/locations/{id}', [AdminController::class, 'updateLocation']);

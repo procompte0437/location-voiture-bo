@@ -39,7 +39,22 @@ class VehicleSearchController extends Controller
         ]);
 
         $query = Vehicle::query()
-            ->with(['partner', 'media', 'agency.location', 'categoryInfo'])
+            ->with([
+                'partner',
+                'media',
+                'agency.location',
+                'categoryInfo',
+                'bookings' => fn ($q) => $q
+                    ->whereIn('status', [
+                        \App\Enums\BookingStatus::Locked->value,
+                        \App\Enums\BookingStatus::PendingPartner->value,
+                        \App\Enums\BookingStatus::Confirmed->value,
+                        \App\Enums\BookingStatus::Ongoing->value,
+                    ])
+                    ->where('return_at', '>', now())
+                    ->orderBy('pickup_at'),
+                'blocks' => fn ($q) => $q->where('ends_at', '>', now())->orderBy('starts_at'),
+            ])
             ->where('status', VehicleStatus::Published)
             ->whereHas('partner', fn ($q) => $q->where('status', PartnerStatus::Approved));
 
@@ -99,24 +114,31 @@ class VehicleSearchController extends Controller
         $return = ! empty($data['return_at']) ? Carbon::parse($data['return_at']) : null;
 
         if ($pickup && $return) {
-            $vehicles = $query->get()->filter(
-                fn (Vehicle $v) => $this->bookings->isAvailable($v, $pickup, $return)
-            )->values();
-
             $days = $this->bookings->calculateDays($pickup, $return);
-
             $sort = $data['sort'] ?? 'price';
-            $vehicles = match ($sort) {
-                'rating' => $vehicles->sortByDesc(fn ($v) => $v->partner->average_rating)->values(),
-                'popularity' => $vehicles->sortByDesc(fn ($v) => $v->partner->reviews_count)->values(),
-                default => $vehicles->sortBy('price_per_day')->values(),
-            };
+
+            $vehicles = $query->get()->map(function (Vehicle $v) use ($pickup, $return) {
+                $v->setAttribute('libre_sur_la_periode', $this->bookings->isAvailable($v, $pickup, $return));
+
+                return $v;
+            })->sortBy([
+                fn (Vehicle $v) => $v->getAttribute('libre_sur_la_periode') ? 0 : 1,
+                match ($sort) {
+                    'rating' => fn (Vehicle $v) => -1 * (float) $v->partner->average_rating,
+                    'popularity' => fn (Vehicle $v) => -1 * (int) $v->partner->reviews_count,
+                    default => fn (Vehicle $v) => $v->price_per_day,
+                },
+            ])->values();
 
             $perPage = $data['per_page'] ?? 12;
             $page = $data['page'] ?? 1;
             $total = $vehicles->count();
             $items = $vehicles->forPage($page, $perPage)->values()->map(
-                fn (Vehicle $v) => $this->transformVehicle($v, $days)
+                fn (Vehicle $v) => $this->transformVehicle(
+                    $v,
+                    $days,
+                    (bool) $v->getAttribute('libre_sur_la_periode')
+                )
             );
 
             return response()->json([
@@ -164,7 +186,23 @@ class VehicleSearchController extends Controller
 
     public function show(int $id): JsonResponse
     {
-        $vehicle = Vehicle::with(['partner', 'media', 'agency.location', 'pricingRules', 'categoryInfo'])
+        $vehicle = Vehicle::with([
+            'partner',
+            'media',
+            'agency.location',
+            'pricingRules',
+            'categoryInfo',
+            'bookings' => fn ($q) => $q
+                ->whereIn('status', [
+                    \App\Enums\BookingStatus::Locked->value,
+                    \App\Enums\BookingStatus::PendingPartner->value,
+                    \App\Enums\BookingStatus::Confirmed->value,
+                    \App\Enums\BookingStatus::Ongoing->value,
+                ])
+                ->where('return_at', '>', now())
+                ->orderBy('pickup_at'),
+            'blocks' => fn ($q) => $q->where('ends_at', '>', now())->orderBy('starts_at'),
+        ])
             ->where('status', VehicleStatus::Published)
             ->findOrFail($id);
 
@@ -185,10 +223,13 @@ class VehicleSearchController extends Controller
             Carbon::parse($data['return_at'])
         );
 
-        return response()->json(['available' => $available]);
+        return response()->json([
+            'available' => $available,
+            'calendar' => $this->bookings->calendrier($vehicle),
+        ]);
     }
 
-    private function transformVehicle(Vehicle $vehicle, ?int $days = null): array
+    private function transformVehicle(Vehicle $vehicle, ?int $days = null, ?bool $available = null): array
     {
         $cover = $vehicle->media->firstWhere('is_cover', true) ?? $vehicle->media->first();
         $total = $days ? $days * $vehicle->price_per_day : null;
@@ -221,6 +262,8 @@ class VehicleSearchController extends Controller
             'price_per_day' => $vehicle->price_per_day,
             'total_price' => $total,
             'days' => $days,
+            'available' => $available,
+            'calendar' => $this->bookings->calendrier($vehicle),
             'currency' => 'XAF',
             'cover_url' => $cover?->url,
             'media' => $vehicle->media->map(fn ($m) => [

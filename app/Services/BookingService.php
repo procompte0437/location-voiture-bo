@@ -27,27 +27,151 @@ class BookingService
 
     public function isAvailable(Vehicle $vehicle, Carbon $pickup, Carbon $return, ?int $excludeBookingId = null): bool
     {
-        $overlapBookings = Booking::query()
-            ->where('vehicle_id', $vehicle->id)
-            ->when($excludeBookingId, fn ($q) => $q->where('id', '!=', $excludeBookingId))
-            ->whereIn('status', [
-                BookingStatus::Locked->value,
-                BookingStatus::PendingPartner->value,
-                BookingStatus::Confirmed->value,
-                BookingStatus::Ongoing->value,
-            ])
-            ->where('pickup_at', '<', $return)
-            ->where('return_at', '>', $pickup)
-            ->exists();
+        $statuts = [
+            BookingStatus::Locked,
+            BookingStatus::PendingPartner,
+            BookingStatus::Confirmed,
+            BookingStatus::Ongoing,
+        ];
 
-        if ($overlapBookings) {
+        if ($vehicle->relationLoaded('bookings')) {
+            $chevauche = $vehicle->bookings->contains(function (Booking $reservation) use ($statuts, $pickup, $return, $excludeBookingId) {
+                if ($excludeBookingId && $reservation->id === $excludeBookingId) {
+                    return false;
+                }
+                $statut = $reservation->status instanceof BookingStatus
+                    ? $reservation->status
+                    : BookingStatus::tryFrom((string) $reservation->status);
+                if (! $statut || ! in_array($statut, $statuts, true)) {
+                    return false;
+                }
+
+                return $reservation->pickup_at->lt($return) && $reservation->return_at->gt($pickup);
+            });
+        } else {
+            $chevauche = Booking::query()
+                ->where('vehicle_id', $vehicle->id)
+                ->when($excludeBookingId, fn ($q) => $q->where('id', '!=', $excludeBookingId))
+                ->whereIn('status', array_map(fn (BookingStatus $s) => $s->value, $statuts))
+                ->where('pickup_at', '<', $return)
+                ->where('return_at', '>', $pickup)
+                ->exists();
+        }
+
+        if ($chevauche) {
             return false;
+        }
+
+        if ($vehicle->relationLoaded('blocks')) {
+            return ! $vehicle->blocks->contains(
+                fn ($blocage) => $blocage->starts_at->lt($return) && $blocage->ends_at->gt($pickup)
+            );
         }
 
         return ! $vehicle->blocks()
             ->where('starts_at', '<', $return)
             ->where('ends_at', '>', $pickup)
             ->exists();
+    }
+
+    /**
+     * Créneaux pris (réservations actives) et libres sur l’horizon, pour la liste des voitures.
+     *
+     * @return array{occupied: list<array{starts_at: string, ends_at: string}>, free: list<array{starts_at: string, ends_at: string}>}
+     */
+    public function calendrier(Vehicle $vehicle, int $horizonJours = 90): array
+    {
+        $statuts = [
+            BookingStatus::Locked,
+            BookingStatus::PendingPartner,
+            BookingStatus::Confirmed,
+            BookingStatus::Ongoing,
+        ];
+
+        $maintenant = now();
+        $debut = $maintenant->copy()->startOfDay();
+        $fin = $debut->copy()->addDays($horizonJours);
+
+        $reservations = $vehicle->relationLoaded('bookings')
+            ? $vehicle->bookings
+            : $vehicle->bookings()
+                ->whereIn('status', array_map(fn (BookingStatus $s) => $s->value, $statuts))
+                ->where('return_at', '>', $maintenant)
+                ->orderBy('pickup_at')
+                ->get();
+
+        $blocages = $vehicle->relationLoaded('blocks')
+            ? $vehicle->blocks
+            : $vehicle->blocks()
+                ->where('ends_at', '>', $maintenant)
+                ->orderBy('starts_at')
+                ->get();
+
+        $bruts = [];
+        foreach ($reservations as $reservation) {
+            $statut = $reservation->status instanceof BookingStatus
+                ? $reservation->status
+                : BookingStatus::tryFrom((string) $reservation->status);
+            if (! $statut || ! in_array($statut, $statuts, true)) {
+                continue;
+            }
+            if ($reservation->return_at->lte($maintenant)) {
+                continue;
+            }
+            $bruts[] = [$reservation->pickup_at->copy(), $reservation->return_at->copy()];
+        }
+        foreach ($blocages as $blocage) {
+            if ($blocage->ends_at->lte($maintenant)) {
+                continue;
+            }
+            $bruts[] = [$blocage->starts_at->copy(), $blocage->ends_at->copy()];
+        }
+
+        usort($bruts, fn ($a, $b) => $a[0]->getTimestamp() <=> $b[0]->getTimestamp());
+
+        $fusionnes = [];
+        foreach ($bruts as [$depart, $retour]) {
+            if ($fusionnes === []) {
+                $fusionnes[] = [$depart, $retour];
+                continue;
+            }
+            $dernier = count($fusionnes) - 1;
+            if ($depart->lte($fusionnes[$dernier][1])) {
+                if ($retour->gt($fusionnes[$dernier][1])) {
+                    $fusionnes[$dernier][1] = $retour;
+                }
+                continue;
+            }
+            $fusionnes[] = [$depart, $retour];
+        }
+
+        $libres = [];
+        $curseur = $debut->copy();
+        foreach ($fusionnes as [$depart, $retour]) {
+            if ($depart->gte($fin)) {
+                break;
+            }
+            if ($depart->gt($curseur)) {
+                $finLibre = $depart->lt($fin) ? $depart->copy() : $fin->copy();
+                $libres[] = [$curseur->copy(), $finLibre];
+            }
+            if ($retour->gt($curseur)) {
+                $curseur = $retour->copy();
+            }
+        }
+        if ($curseur->lt($fin)) {
+            $libres[] = [$curseur->copy(), $fin->copy()];
+        }
+
+        $formater = fn (Carbon $a, Carbon $b) => [
+            'starts_at' => $a->toIso8601String(),
+            'ends_at' => $b->toIso8601String(),
+        ];
+
+        return [
+            'occupied' => array_map(fn ($p) => $formater($p[0], $p[1]), $fusionnes),
+            'free' => array_map(fn ($p) => $formater($p[0], $p[1]), $libres),
+        ];
     }
 
     public function create(array $data, ?int $customerId = null): Booking
@@ -153,5 +277,133 @@ class BookingService
 
             return $payment;
         });
+    }
+
+    /** Confirmation admin / commercial : passe la réservation en confirmée. */
+    public function confirmByAdmin(Booking $booking): Booking
+    {
+        $statut = $booking->status instanceof BookingStatus
+            ? $booking->status
+            : BookingStatus::tryFrom((string) $booking->status);
+
+        $autorises = [
+            BookingStatus::PendingPartner,
+            BookingStatus::PendingPayment,
+            BookingStatus::Locked,
+        ];
+
+        if ($statut && in_array($statut, $autorises, true) && $booking->pickup_at && $booking->pickup_at->lt(now())) {
+            $this->archiver($booking);
+            throw ValidationException::withMessages([
+                'status' => ['Le délai est dépassé : la réservation a été archivée et ne peut plus être validée.'],
+            ]);
+        }
+
+        if (! $statut || ! in_array($statut, $autorises, true)) {
+            throw ValidationException::withMessages([
+                'status' => ['Cette réservation ne peut plus être validée.'],
+            ]);
+        }
+
+        $avant = $booking->toArray();
+        $booking->update([
+            'status' => BookingStatus::Confirmed,
+            'confirmed_at' => now(),
+            'locked_until' => null,
+        ]);
+
+        $this->audit->log('booking.confirmed_by_admin', $booking, $avant, $booking->fresh()->toArray());
+
+        return $booking->fresh(['vehicle', 'partner', 'customer', 'pickupLocation']);
+    }
+
+    /** Annulation admin d’une réservation non terminée. */
+    public function cancelByAdmin(Booking $booking, ?string $raison = null): Booking
+    {
+        $statut = $booking->status instanceof BookingStatus
+            ? $booking->status
+            : BookingStatus::tryFrom((string) $booking->status);
+
+        $interdits = [
+            BookingStatus::Completed,
+            BookingStatus::Cancelled,
+            BookingStatus::Refunded,
+            BookingStatus::Expired,
+            BookingStatus::Archived,
+        ];
+
+        if (! $statut || in_array($statut, $interdits, true)) {
+            throw ValidationException::withMessages([
+                'status' => ['Cette réservation ne peut pas être annulée.'],
+            ]);
+        }
+
+        $avant = $booking->toArray();
+        $booking->update([
+            'status' => BookingStatus::Cancelled,
+            'cancelled_at' => now(),
+            'cancellation_reason' => $raison ?: 'Annulée par l’administration.',
+            'locked_until' => null,
+        ]);
+
+        $this->audit->log('booking.cancelled_by_admin', $booking, $avant, $booking->fresh()->toArray());
+
+        return $booking->fresh(['vehicle', 'partner', 'customer', 'pickupLocation']);
+    }
+
+    /** Passage en location terminée (après confirmation / en cours). */
+    public function completeByAdmin(Booking $booking): Booking
+    {
+        $statut = $booking->status instanceof BookingStatus
+            ? $booking->status
+            : BookingStatus::tryFrom((string) $booking->status);
+
+        $autorises = [BookingStatus::Confirmed, BookingStatus::Ongoing];
+
+        if (! $statut || ! in_array($statut, $autorises, true)) {
+            throw ValidationException::withMessages([
+                'status' => ['Seule une réservation confirmée ou en cours peut être terminée.'],
+            ]);
+        }
+
+        $avant = $booking->toArray();
+        $booking->update(['status' => BookingStatus::Completed]);
+
+        $this->audit->log('booking.completed_by_admin', $booking, $avant, $booking->fresh()->toArray());
+
+        return $booking->fresh(['vehicle', 'partner', 'customer', 'pickupLocation']);
+    }
+
+    /**
+     * Une demande encore non validée dont le départ est passé ne peut plus être honorée :
+     * elle est archivée et sort du circuit de validation.
+     */
+    public function archiverDelaisDepasses(): int
+    {
+        $reservations = Booking::query()
+            ->whereIn('status', [
+                BookingStatus::PendingPartner->value,
+                BookingStatus::PendingPayment->value,
+                BookingStatus::Locked->value,
+            ])
+            ->where('pickup_at', '<', now())
+            ->get();
+
+        foreach ($reservations as $reservation) {
+            $this->archiver($reservation);
+        }
+
+        return $reservations->count();
+    }
+
+    private function archiver(Booking $booking): void
+    {
+        $avant = $booking->toArray();
+        $booking->update([
+            'status' => BookingStatus::Archived,
+            'locked_until' => null,
+        ]);
+
+        $this->audit->log('booking.archived', $booking, $avant, $booking->fresh()->toArray());
     }
 }

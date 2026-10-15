@@ -25,6 +25,14 @@ class AuthController extends Controller
             'phone' => ['nullable', 'string', 'max:30', 'unique:utilisateurs,phone'],
             'password' => ['required', 'confirmed', Password::defaults()],
             'role' => ['nullable', 'in:customer,partner'],
+        ], [
+            'name.required' => 'Le nom est obligatoire.',
+            'email.required' => 'L’adresse e-mail est obligatoire.',
+            'email.email' => 'L’adresse e-mail n’est pas valide.',
+            'email.unique' => 'Cette adresse e-mail est déjà utilisée. Connectez-vous ou choisissez une autre adresse.',
+            'phone.unique' => 'Ce numéro de téléphone est déjà associé à un compte.',
+            'password.required' => 'Le mot de passe est obligatoire.',
+            'password.confirmed' => 'La confirmation du mot de passe ne correspond pas.',
         ]);
 
         $role = $data['role'] ?? 'customer';

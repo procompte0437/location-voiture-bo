@@ -13,4 +13,5 @@ enum BookingStatus: string
     case Cancelled = 'cancelled';
     case Expired = 'expired';
     case Refunded = 'refunded';
+    case Archived = 'archived';
 }

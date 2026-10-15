@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\VehicleCategory;
 use App\Services\AuditService;
+use App\Services\BookingService;
 use App\Support\ProvincesGabon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,7 +23,10 @@ use Illuminate\Validation\Rule;
 
 class AdminController extends Controller
 {
-    public function __construct(private AuditService $audit) {}
+    public function __construct(
+        private AuditService $audit,
+        private BookingService $bookings,
+    ) {}
 
     public function dashboard(): JsonResponse
     {
@@ -452,11 +456,50 @@ class AdminController extends Controller
 
     public function bookings(): JsonResponse
     {
-        $bookings = Booking::with(['vehicle', 'partner', 'customer', 'pickupLocation'])
-            ->latest()
-            ->paginate(30);
+        $this->bookings->archiverDelaisDepasses();
 
-        return response()->json($bookings);
+        $bookings = Booking::with(['vehicle', 'partner', 'customer', 'pickupLocation', 'returnLocation'])
+            ->latest()
+            ->get();
+
+        return response()->json(['data' => $bookings]);
+    }
+
+    public function confirmBooking(int $id): JsonResponse
+    {
+        $booking = Booking::findOrFail($id);
+        $confirmee = $this->bookings->confirmByAdmin($booking);
+
+        return response()->json([
+            'message' => 'Réservation validée.',
+            'data' => $confirmee,
+        ]);
+    }
+
+    public function cancelBooking(Request $request, int $id): JsonResponse
+    {
+        $data = $request->validate([
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $booking = Booking::findOrFail($id);
+        $annulee = $this->bookings->cancelByAdmin($booking, $data['reason'] ?? null);
+
+        return response()->json([
+            'message' => 'Réservation annulée.',
+            'data' => $annulee,
+        ]);
+    }
+
+    public function completeBooking(int $id): JsonResponse
+    {
+        $booking = Booking::findOrFail($id);
+        $terminee = $this->bookings->completeByAdmin($booking);
+
+        return response()->json([
+            'message' => 'Réservation marquée comme terminée.',
+            'data' => $terminee,
+        ]);
     }
 
     public function auditLogs(): JsonResponse
