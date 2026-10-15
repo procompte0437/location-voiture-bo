@@ -14,7 +14,7 @@ Route::prefix('v1')->group(function () {
     // Public
     Route::get('/health', fn () => response()->json([
         'status' => 'ok',
-        'app' => 'LocaGabon API',
+        'app' => 'DOTO API',
         'version' => '1.0.0',
     ]));
 

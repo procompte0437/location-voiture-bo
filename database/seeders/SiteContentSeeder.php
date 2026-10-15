@@ -13,7 +13,7 @@ class SiteContentSeeder extends Seeder
     public function run(): void
     {
         $contents = [
-            ['key' => 'home.hero_title', 'group' => 'home', 'value' => 'LocaGabon'],
+            ['key' => 'home.hero_title', 'group' => 'home', 'value' => 'DOTO'],
             ['key' => 'home.hero_eyebrow', 'group' => 'home', 'value' => 'Marketplace de location'],
             ['key' => 'home.hero_subtitle', 'group' => 'home', 'value' => 'Comparez, réservez et payez votre véhicule en moins de 3 minutes — partenaires locaux vérifiés.'],
             ['key' => 'home.hero_promises', 'group' => 'home', 'value' => 'Véhicules récents · Assurance incluse · Livraison aéroport Léon-Mba / hôtel / domicile'],
