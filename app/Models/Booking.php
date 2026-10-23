@@ -15,7 +15,7 @@ class Booking extends Model
     protected $fillable = [
         'reference', 'customer_id', 'guest_email', 'guest_phone', 'guest_name',
         'vehicle_id', 'partner_id', 'pickup_location_id', 'return_location_id',
-        'pickup_at', 'return_at', 'driver_age', 'status', 'days_count',
+        'pickup_at', 'return_at', 'driver_age', 'payment_method', 'status', 'days_count',
         'subtotal', 'extras_total', 'total_amount', 'deposit_amount',
         'commission_amount', 'commission_rate', 'cancellation_policy',
         'source', 'locked_until', 'confirmed_at', 'cancelled_at', 'cancellation_reason',

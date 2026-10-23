@@ -45,6 +45,47 @@ class AdminController extends Controller
         ]);
     }
 
+    /**
+     * Classe les partenaires selon le nombre de réservations prises sur leurs voitures.
+     * Réservé au super admin : le client, lui, ne voit pas le propriétaire.
+     */
+    public function evaluationPartenaires(): JsonResponse
+    {
+        $partenaires = Partner::query()
+            ->withCount(['vehicles', 'bookings'])
+            ->withSum('bookings', 'total_amount')
+            ->with(['vehicles' => function ($requete) {
+                $requete->withCount('bookings');
+            }])
+            ->orderByDesc('bookings_count')
+            ->orderBy('company_name')
+            ->get()
+            ->map(function (Partner $partenaire) {
+                $statut = $partenaire->status instanceof PartnerStatus
+                    ? $partenaire->status->value
+                    : (string) $partenaire->status;
+
+                return [
+                    'id' => $partenaire->id,
+                    'nom' => $partenaire->company_name ?: $partenaire->manager_name ?: 'Partenaire',
+                    'ville' => $partenaire->city,
+                    'statut' => $statut,
+                    'vehicules_count' => (int) $partenaire->vehicles_count,
+                    'reservations_count' => (int) $partenaire->bookings_count,
+                    'montant_total' => (int) $partenaire->bookings_sum_total_amount,
+                    'vehicules' => $partenaire->vehicles->sortByDesc('bookings_count')->values()->map(fn (Vehicle $vehicule) => [
+                        'id' => $vehicule->id,
+                        'nom' => trim(($vehicule->brand ?? '').' '.($vehicule->model ?? '')),
+                        'immatriculation' => $vehicule->plate_number,
+                        'reservations_count' => (int) $vehicule->bookings_count,
+                    ])->values(),
+                ];
+            })
+            ->values();
+
+        return response()->json(['data' => $partenaires]);
+    }
+
     public function partners(Request $request): JsonResponse
     {
         $status = $request->query('status');
@@ -190,6 +231,30 @@ class AdminController extends Controller
 
     public function vehicles(Request $request): JsonResponse
     {
+        // Le super admin parcourt la flotte partenaire par partenaire, publiée ou seulement créée.
+        if ($request->boolean('par_partenaire')) {
+            $partenaires = Partner::query()
+                ->with(['vehicles' => function ($q) {
+                    $q->with(['media', 'categoryInfo', 'agency'])
+                        ->orderBy('brand')
+                        ->orderBy('model');
+                }])
+                ->orderBy('company_name')
+                ->get();
+
+            $sansPartenaire = Vehicle::query()
+                ->whereNull('partner_id')
+                ->with(['media', 'categoryInfo', 'agency'])
+                ->orderBy('brand')
+                ->orderBy('model')
+                ->get();
+
+            return response()->json([
+                'data' => $partenaires,
+                'sans_partenaire' => $sansPartenaire,
+            ]);
+        }
+
         $data = $request->validate([
             'status' => ['nullable', 'string'],
             'category' => ['nullable', 'string'],
@@ -489,6 +554,15 @@ class AdminController extends Controller
             'message' => 'Réservation annulée.',
             'data' => $annulee,
         ]);
+    }
+
+    /** Suppression définitive d’une réservation déjà annulée. */
+    public function destroyBooking(int $id): JsonResponse
+    {
+        $booking = Booking::findOrFail($id);
+        $this->bookings->supprimerDefinitivement($booking);
+
+        return response()->json(['message' => 'Réservation supprimée définitivement.']);
     }
 
     public function completeBooking(int $id): JsonResponse

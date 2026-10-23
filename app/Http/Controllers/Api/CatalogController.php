@@ -246,7 +246,6 @@ class CatalogController extends Controller
                 'address' => $a->address,
                 'city' => $a->city,
                 'province_slug' => $a->province_slug,
-                'partner_name' => $a->partner?->company_name ?: $a->partner?->manager_name,
                 'location_name' => $a->location?->name,
             ])
             ->values();

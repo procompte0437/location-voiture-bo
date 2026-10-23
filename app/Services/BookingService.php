@@ -229,6 +229,7 @@ class BookingService
                 'pickup_at' => $pickup,
                 'return_at' => $return,
                 'driver_age' => $driverAge,
+                'payment_method' => $data['payment_method'] ?? null,
                 'status' => BookingStatus::Locked,
                 'days_count' => $days,
                 'subtotal' => $subtotal,
@@ -243,7 +244,7 @@ class BookingService
 
             $this->audit->log('booking.created', $booking, null, $booking->toArray(), $customerId);
 
-            return $booking->load(['vehicle.media', 'partner', 'pickupLocation', 'returnLocation']);
+            return $booking->load(['vehicle.media', 'pickupLocation', 'returnLocation']);
         });
     }
 
@@ -315,6 +316,62 @@ class BookingService
         $this->audit->log('booking.confirmed_by_admin', $booking, $avant, $booking->fresh()->toArray());
 
         return $booking->fresh(['vehicle', 'partner', 'customer', 'pickupLocation']);
+    }
+
+    /**
+     * Le client annule tant que la demande n’est pas encore validée
+     * (en cours de validation, paiement en attente ou attente partenaire).
+     */
+    public function annulerParClient(Booking $booking): Booking
+    {
+        $statut = $booking->status instanceof BookingStatus
+            ? $booking->status
+            : BookingStatus::tryFrom((string) $booking->status);
+
+        $autorises = [
+            BookingStatus::Locked,
+            BookingStatus::PendingPayment,
+            BookingStatus::PendingPartner,
+        ];
+
+        if (! $statut || ! in_array($statut, $autorises, true)) {
+            throw ValidationException::withMessages([
+                'status' => ['Cette réservation ne peut plus être annulée.'],
+            ]);
+        }
+
+        $avant = $booking->toArray();
+        $booking->update([
+            'status' => BookingStatus::Cancelled,
+            'cancelled_at' => now(),
+            'cancellation_reason' => 'Annulée par le client.',
+            'locked_until' => null,
+        ]);
+
+        $this->audit->log('booking.cancelled_by_customer', $booking, $avant, $booking->fresh()->toArray());
+
+        return $booking->fresh(['vehicle', 'customer', 'pickupLocation']);
+    }
+
+    /**
+     * Retire définitivement une réservation déjà annulée.
+     * Une demande encore active doit d’abord être annulée pour rester dans l’historique.
+     */
+    public function supprimerDefinitivement(Booking $booking): void
+    {
+        $statut = $booking->status instanceof BookingStatus
+            ? $booking->status
+            : BookingStatus::tryFrom((string) $booking->status);
+
+        if ($statut !== BookingStatus::Cancelled) {
+            throw ValidationException::withMessages([
+                'status' => ['Seule une réservation annulée peut être supprimée définitivement.'],
+            ]);
+        }
+
+        $avant = $booking->toArray();
+        $this->audit->log('booking.deleted', null, $avant, null);
+        $booking->delete();
     }
 
     /** Annulation admin d’une réservation non terminée. */

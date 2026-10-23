@@ -139,7 +139,7 @@ class ControleurPartenaire extends Controller
     }
 
     /**
-     * Crée un véhicule pour le partenaire (publication selon niveau de confiance).
+     * Crée un véhicule en brouillon. La mise en ligne se fait ensuite via publierVehicule.
      */
     public function enregistrerVehicule(Request $requete): JsonResponse
     {
@@ -207,14 +207,10 @@ class ControleurPartenaire extends Controller
         $donnees['brand'] = $marque->label;
         $donnees['model'] = $modele->label;
 
-        $necessiteValidation = in_array($partenaire->trust_level, ['new', 'verified'], true);
-
         $vehicule = Vehicle::create([
             ...collect($donnees)->except(['cover_url', 'cover'])->all(),
             'partner_id' => $partenaire->id,
-            'status' => $necessiteValidation
-                ? VehicleStatus::PendingValidation
-                : VehicleStatus::Published,
+            'status' => VehicleStatus::Draft,
         ]);
 
         // Priorité : fichier uploadé, sinon URL manuelle.
@@ -237,6 +233,38 @@ class ControleurPartenaire extends Controller
         $this->audit->log('vehicle.created', $vehicule, null, $vehicule->toArray());
 
         return response()->json(['data' => $vehicule->load('media')], 201);
+    }
+
+    /**
+     * Passe une voiture déjà créée en ligne, ou en validation si le compte est encore nouveau.
+     */
+    public function publierVehicule(Request $requete, int $id): JsonResponse
+    {
+        $partenaire = $this->partenaireDuCompte($requete);
+
+        if (! $partenaire->isApproved()) {
+            return response()->json([
+                'message' => 'Votre compte partenaire doit être validé pour publier des véhicules.',
+            ], 403);
+        }
+
+        $vehicule = $partenaire->vehicles()->findOrFail($id);
+
+        if ($vehicule->status === VehicleStatus::Published) {
+            return response()->json(['data' => $vehicule->load('media')]);
+        }
+
+        $avant = $vehicule->toArray();
+        $necessiteValidation = in_array($partenaire->trust_level, ['new', 'verified'], true);
+        $vehicule->update([
+            'status' => $necessiteValidation
+                ? VehicleStatus::PendingValidation
+                : VehicleStatus::Published,
+        ]);
+
+        $this->audit->log('vehicle.published', $vehicule, $avant, $vehicule->toArray());
+
+        return response()->json(['data' => $vehicule->fresh('media')]);
     }
 
     /**

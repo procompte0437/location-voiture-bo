@@ -32,6 +32,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/catalog/provinces/{slug}', [CatalogController::class, 'province']);
 
     Route::get('/vehicles/search', [VehicleSearchController::class, 'search']);
+    Route::get('/vehicules/disponibilite', [VehicleSearchController::class, 'disponibilite']);
     Route::get('/vehicles/{id}', [VehicleSearchController::class, 'show']);
     Route::get('/vehicles/{id}/availability', [VehicleSearchController::class, 'availability']);
 
@@ -49,6 +50,9 @@ Route::prefix('v1')->group(function () {
 
         Route::get('/bookings', [BookingController::class, 'index']);
         Route::get('/bookings/{id}', [BookingController::class, 'show']);
+        Route::get('/bookings/{id}/contrat', [BookingController::class, 'recapitulatif']);
+        Route::post('/bookings/{id}/annuler', [BookingController::class, 'annuler']);
+        Route::delete('/bookings/{id}', [BookingController::class, 'supprimer']);
 
         // Inscription dossier : utilisateur authentifié (devient partenaire).
         Route::post('/partenaires/inscription', [ControleurPartenaire::class, 'inscrire']);
@@ -60,6 +64,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/moi/tableau-de-bord', [ControleurPartenaire::class, 'tableauDeBord']);
             Route::get('/moi/vehicules', [ControleurPartenaire::class, 'vehicules']);
             Route::post('/moi/vehicules', [ControleurPartenaire::class, 'enregistrerVehicule']);
+            Route::post('/moi/vehicules/{id}/publier', [ControleurPartenaire::class, 'publierVehicule']);
             Route::get('/moi/reservations', [ControleurPartenaire::class, 'reservations']);
             // Référentiel marques/modèles partagé (création par tout partenaire, visible partout).
             Route::get('/moi/referentiel', [ControleurPartenaire::class, 'listerReferentiel']);
@@ -69,6 +74,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/me/dashboard', [ControleurPartenaire::class, 'tableauDeBord']);
             Route::get('/me/vehicles', [ControleurPartenaire::class, 'vehicules']);
             Route::post('/me/vehicles', [ControleurPartenaire::class, 'enregistrerVehicule']);
+            Route::post('/me/vehicles/{id}/publish', [ControleurPartenaire::class, 'publierVehicule']);
             Route::get('/me/bookings', [ControleurPartenaire::class, 'reservations']);
             Route::get('/me/references', [ControleurPartenaire::class, 'listerReferentiel']);
             Route::post('/me/references', [ControleurPartenaire::class, 'creerReferentiel']);
@@ -94,6 +100,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/bookings', [AdminController::class, 'bookings']);
             Route::post('/bookings/{id}/confirm', [AdminController::class, 'confirmBooking']);
             Route::post('/bookings/{id}/cancel', [AdminController::class, 'cancelBooking']);
+            Route::delete('/bookings/{id}', [AdminController::class, 'destroyBooking']);
             Route::post('/bookings/{id}/complete', [AdminController::class, 'completeBooking']);
             Route::get('/locations', [AdminController::class, 'locations']);
             Route::post('/locations', [AdminController::class, 'storeLocation']);
@@ -112,6 +119,7 @@ Route::prefix('v1')->group(function () {
 
         // Gestion des comptes (partenaires + utilisateurs) : super admin uniquement.
         Route::middleware('role:super_admin')->prefix('admin')->group(function () {
+            Route::get('/evaluation-partenaires', [AdminController::class, 'evaluationPartenaires']);
             Route::get('/partners', [AdminController::class, 'partners']);
             Route::get('/partners/{id}', [AdminController::class, 'showPartner']);
             Route::post('/partners/{id}/approve', [AdminController::class, 'approvePartner']);

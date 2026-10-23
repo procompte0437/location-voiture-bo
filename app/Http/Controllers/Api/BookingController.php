@@ -8,11 +8,18 @@ use App\Models\Booking;
 use App\Models\CustomerProfile;
 use App\Models\User;
 use App\Services\BookingService;
+use App\Services\GenerateurRecapitulatifReservation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\Response;
+
 class BookingController extends Controller
 {
-    public function __construct(private BookingService $bookings) {}
+    public function __construct(
+        private BookingService $bookings,
+        private GenerateurRecapitulatifReservation $recapitulatifs,
+    ) {}
 
     public function store(Request $request): JsonResponse
     {
@@ -28,6 +35,10 @@ class BookingController extends Controller
             'guest_email' => [$user ? 'nullable' : 'required', 'email', 'max:190'],
             'guest_phone' => ['nullable', 'string', 'max:30'],
             'guest_name' => [$user ? 'nullable' : 'required', 'string', 'max:120'],
+            'payment_method' => $this->regleMoyenPaiement(),
+        ], [
+            'payment_method.required' => 'Choisissez un moyen de paiement.',
+            'payment_method.exists' => 'Ce moyen de paiement n’est plus proposé.',
         ]);
 
         $compteCree = false;
@@ -52,7 +63,7 @@ class BookingController extends Controller
         $booking = $this->bookings->create($data, $user->id);
 
         return response()->json([
-            'data' => $booking,
+            'data' => $this->masquerProprietaire($booking),
             'meta' => [
                 'account_created' => $compteCree,
                 'show_credentials' => $afficherIdentifiants,
@@ -111,15 +122,16 @@ class BookingController extends Controller
         $user = $request->user();
         $this->claimGuestBookings($user);
 
-        $bookings = Booking::with(['vehicle.media', 'partner', 'pickupLocation'])
+        $bookings = Booking::with(['vehicle.media', 'pickupLocation'])
             ->where(function ($q) use ($user) {
                 $q->where('customer_id', $user->id)
                     ->orWhere('guest_email', $user->email);
             })
             ->latest()
-            ->paginate(15);
+            ->get()
+            ->each(fn (Booking $reservation) => $this->masquerProprietaire($reservation));
 
-        return response()->json($bookings);
+        return response()->json(['data' => $bookings]);
     }
 
     public function show(Request $request, int $id): JsonResponse
@@ -127,14 +139,74 @@ class BookingController extends Controller
         $user = $request->user();
         $this->claimGuestBookings($user);
 
-        $booking = Booking::with(['vehicle.media', 'partner', 'pickupLocation', 'returnLocation', 'payment'])
+        $booking = Booking::with(['vehicle.media', 'pickupLocation', 'returnLocation', 'payment'])
             ->where(function ($q) use ($user) {
                 $q->where('customer_id', $user->id)
                     ->orWhere('guest_email', $user->email);
             })
             ->findOrFail($id);
 
-        return response()->json(['data' => $booking]);
+        return response()->json(['data' => $this->masquerProprietaire($booking)]);
+    }
+
+    /** PDF du récapitulatif, réservé au client propriétaire de la demande. */
+    public function recapitulatif(Request $request, int $id): Response
+    {
+        $user = $request->user();
+        $this->claimGuestBookings($user);
+
+        $reservation = Booking::query()
+            ->where(function ($q) use ($user) {
+                $q->where('customer_id', $user->id)
+                    ->orWhere('guest_email', $user->email);
+            })
+            ->findOrFail($id);
+
+        $nom = 'recapitulatif-'.($reservation->reference ?: $reservation->id).'.pdf';
+
+        return response($this->recapitulatifs->produire($reservation), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="'.$nom.'"',
+        ]);
+    }
+
+    /** Annulation par le réservateur, uniquement tant que la demande est en validation. */
+    public function annuler(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        $this->claimGuestBookings($user);
+
+        $booking = Booking::query()
+            ->where(function ($q) use ($user) {
+                $q->where('customer_id', $user->id)
+                    ->orWhere('guest_email', $user->email);
+            })
+            ->findOrFail($id);
+
+        $annulee = $this->bookings->annulerParClient($booking);
+
+        return response()->json([
+            'message' => 'Réservation annulée.',
+            'data' => $this->masquerProprietaire($annulee),
+        ]);
+    }
+
+    /** Suppression définitive, uniquement d’une réservation déjà annulée et appartenant au client. */
+    public function supprimer(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        $this->claimGuestBookings($user);
+
+        $booking = Booking::query()
+            ->where(function ($q) use ($user) {
+                $q->where('customer_id', $user->id)
+                    ->orWhere('guest_email', $user->email);
+            })
+            ->findOrFail($id);
+
+        $this->bookings->supprimerDefinitivement($booking);
+
+        return response()->json(['message' => 'Réservation supprimée définitivement.']);
     }
 
     public function guestLookup(Request $request): JsonResponse
@@ -144,7 +216,7 @@ class BookingController extends Controller
             'email' => ['required', 'email'],
         ]);
 
-        $booking = Booking::with(['vehicle.media', 'partner', 'payment'])
+        $booking = Booking::with(['vehicle.media', 'payment'])
             ->where('reference', $data['reference'])
             ->where(function ($q) use ($data) {
                 $q->where('guest_email', $data['email'])
@@ -152,13 +224,16 @@ class BookingController extends Controller
             })
             ->firstOrFail();
 
-        return response()->json(['data' => $booking]);
+        return response()->json(['data' => $this->masquerProprietaire($booking)]);
     }
 
     public function pay(Request $request, int $id): JsonResponse
     {
         $data = $request->validate([
-            'method' => ['required', 'in:airtel_money,moov_money,card,agency_cash'],
+            'method' => $this->regleMoyenPaiement(),
+        ], [
+            'method.required' => 'Choisissez un moyen de paiement.',
+            'method.exists' => 'Ce moyen de paiement n’est plus proposé.',
         ]);
 
         $booking = Booking::with('vehicle')->findOrFail($id);
@@ -182,14 +257,48 @@ class BookingController extends Controller
         return response()->json([
             'data' => [
                 'payment' => $payment,
-                'booking' => $booking->fresh(['vehicle', 'partner', 'payment']),
+                'booking' => $this->masquerProprietaire($booking->fresh(['vehicle', 'payment'])),
             ],
         ]);
+    }
+
+    /**
+     * Un moyen est accepté seulement s’il est actif dans le référentiel admin.
+     *
+     * @return list<\Illuminate\Contracts\Validation\ValidationRule|string>
+     */
+    private function regleMoyenPaiement(): array
+    {
+        return [
+            'required',
+            'string',
+            'max:80',
+            Rule::exists('listes_reference', 'slug')->where(
+                fn ($requete) => $requete->where('type', 'payment_method')->where('is_active', true)
+            ),
+        ];
     }
 
     private function optionalUser(Request $request): ?User
     {
         return $request->user('sanctum') ?? $request->user();
+    }
+
+    /**
+     * Le client ne voit pas qui possède la voiture. Le partner_id reste en base.
+     */
+    private function masquerProprietaire(Booking $reservation): Booking
+    {
+        $reservation->makeHidden(['partner_id']);
+        $reservation->unsetRelation('partner');
+
+        $vehicule = $reservation->relationLoaded('vehicle') ? $reservation->vehicle : null;
+        if ($vehicule) {
+            $vehicule->makeHidden(['partner_id']);
+            $vehicule->unsetRelation('partner');
+        }
+
+        return $reservation;
     }
 
     private function claimGuestBookings(User $user): void

@@ -7,6 +7,7 @@ use App\Enums\VehicleStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Location;
 use App\Models\Vehicle;
+use App\Models\VehicleCategory;
 use App\Services\BookingService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -79,9 +80,10 @@ class VehicleSearchController extends Controller
             });
         }
 
-        if (! empty($data['category'])) {
-            $query->where('category', $data['category']);
-        }
+        // La catégorie choisie est appliquée après le décompte : le menu doit
+        // griser les catégories sans voiture libre, même quand un filtre est actif.
+        $categorieChoisie = $data['category'] ?? null;
+
         if (! empty($data['transmission'])) {
             $query->where('transmission', $data['transmission']);
         }
@@ -117,11 +119,25 @@ class VehicleSearchController extends Controller
             $days = $this->bookings->calculateDays($pickup, $return);
             $sort = $data['sort'] ?? 'price';
 
-            $vehicles = $query->get()->map(function (Vehicle $v) use ($pickup, $return) {
+            $tous = $query->get()->map(function (Vehicle $v) use ($pickup, $return) {
                 $v->setAttribute('libre_sur_la_periode', $this->bookings->isAvailable($v, $pickup, $return));
 
                 return $v;
-            })->sortBy([
+            });
+
+            $parCategorie = $tous
+                ->filter(fn (Vehicle $v) => (bool) $v->getAttribute('libre_sur_la_periode'))
+                ->groupBy('category')
+                ->map(fn ($groupe, $slug) => [
+                    'slug' => (string) $slug,
+                    'disponibles' => $groupe->count(),
+                ])
+                ->values();
+
+            $vehicles = ($categorieChoisie
+                ? $tous->filter(fn (Vehicle $v) => $v->category === $categorieChoisie)
+                : $tous
+            )->sortBy([
                 fn (Vehicle $v) => $v->getAttribute('libre_sur_la_periode') ? 0 : 1,
                 match ($sort) {
                     'rating' => fn (Vehicle $v) => -1 * (float) $v->partner->average_rating,
@@ -149,8 +165,25 @@ class VehicleSearchController extends Controller
                     'per_page' => (int) $perPage,
                     'last_page' => (int) max(1, (int) ceil($total / $perPage)),
                     'days' => $days,
+                    'par_categorie' => $parCategorie,
                 ],
             ]);
+        }
+
+        $parCategorie = (clone $query)
+            ->reorder()
+            ->select('category')
+            ->selectRaw('COUNT(*) as disponibles')
+            ->groupBy('category')
+            ->get()
+            ->map(fn ($ligne) => [
+                'slug' => (string) $ligne->category,
+                'disponibles' => (int) $ligne->disponibles,
+            ])
+            ->values();
+
+        if ($categorieChoisie) {
+            $query->where('category', $categorieChoisie);
         }
 
         $sort = $data['sort'] ?? 'price';
@@ -180,6 +213,90 @@ class VehicleSearchController extends Controller
                 'per_page' => $paginator->perPage(),
                 'last_page' => $paginator->lastPage(),
                 'days' => null,
+                'par_categorie' => $parCategorie,
+            ],
+        ]);
+    }
+
+    /**
+     * Indique, pour une plage de prise en charge et de retour, s’il reste des voitures libres.
+     */
+    public function disponibilite(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'location_id' => ['nullable', 'exists:lieux,id'],
+            'pickup_at' => ['required', 'date'],
+            'return_at' => ['required', 'date', 'after:pickup_at'],
+            'driver_age' => ['nullable', 'integer', 'min:18', 'max:99'],
+        ]);
+
+        $pickup = Carbon::parse($data['pickup_at']);
+        $return = Carbon::parse($data['return_at']);
+
+        $query = Vehicle::query()
+            ->with([
+                'categoryInfo',
+                'bookings' => fn ($q) => $q
+                    ->whereIn('status', [
+                        \App\Enums\BookingStatus::Locked->value,
+                        \App\Enums\BookingStatus::PendingPartner->value,
+                        \App\Enums\BookingStatus::Confirmed->value,
+                        \App\Enums\BookingStatus::Ongoing->value,
+                    ])
+                    ->where('return_at', '>', $pickup)
+                    ->orderBy('pickup_at'),
+                'blocks' => fn ($q) => $q->where('ends_at', '>', $pickup)->orderBy('starts_at'),
+            ])
+            ->where('status', VehicleStatus::Published)
+            ->whereHas('partner', fn ($q) => $q->where('status', PartnerStatus::Approved));
+
+        if (! empty($data['location_id'])) {
+            $location = Location::find($data['location_id']);
+            $query->where(function ($q) use ($location) {
+                $q->whereHas('agency', function ($aq) use ($location) {
+                    $aq->where('location_id', $location->id)
+                        ->orWhere('city', $location->city ?? $location->name);
+                })->orWhereHas('partner', function ($pq) use ($location) {
+                    $pq->where('city', $location->city ?? $location->name);
+                });
+            });
+        }
+
+        if (! empty($data['driver_age'])) {
+            $query->where('min_driver_age', '<=', $data['driver_age']);
+        }
+
+        $libres = $query->get()->filter(
+            fn (Vehicle $vehicule) => $this->bookings->isAvailable($vehicule, $pickup, $return)
+        );
+
+        $marques = $libres
+            ->groupBy(fn (Vehicle $vehicule) => trim((string) $vehicule->brand))
+            ->map(fn ($groupe, $nom) => [
+                'nom' => (string) $nom,
+                'disponibles' => $groupe->count(),
+            ])
+            ->reject(fn (array $ligne) => $ligne['nom'] === '' || $ligne['disponibles'] === 0)
+            ->sortBy('nom', SORT_NATURAL | SORT_FLAG_CASE)
+            ->values();
+
+        $parSlug = $libres->countBy('category');
+        $categories = VehicleCategory::query()
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->get(['slug', 'label'])
+            ->map(fn (VehicleCategory $categorie) => [
+                'slug' => $categorie->slug,
+                'libelle' => $categorie->label,
+                'disponibles' => (int) ($parSlug[$categorie->slug] ?? 0),
+            ])
+            ->values();
+
+        return response()->json([
+            'data' => [
+                'disponibles' => $libres->count(),
+                'categories' => $categories,
+                'marques' => $marques,
             ],
         ]);
     }
@@ -271,9 +388,8 @@ class VehicleSearchController extends Controller
                 'url' => $m->url,
                 'is_cover' => $m->is_cover,
             ]),
+            // La note reste visible. Le nom du propriétaire, non : le client réserve sans savoir qui détient la voiture.
             'partner' => [
-                'id' => $vehicle->partner->id,
-                'name' => $vehicle->partner->company_name ?? $vehicle->partner->manager_name,
                 'average_rating' => (float) $vehicle->partner->average_rating,
                 'reviews_count' => $vehicle->partner->reviews_count,
                 'trust_level' => $vehicle->partner->trust_level,

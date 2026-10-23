@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\PartnerStatus;
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\CustomerProfile;
+use App\Models\Partner;
 use App\Models\User;
 use App\Services\AuditService;
 use Illuminate\Http\JsonResponse;
@@ -51,6 +53,19 @@ class AuthController extends Controller
             CustomerProfile::create([
                 'user_id' => $user->id,
                 'first_name' => $data['name'],
+            ]);
+        }
+
+        // Le partenaire complète société, RCCM et adresse dans son espace, pas à l’inscription.
+        if ($role === UserRole::Partner->value) {
+            Partner::create([
+                'owner_user_id' => $user->id,
+                'type' => 'individual',
+                'company_name' => $data['name'],
+                'manager_name' => $data['name'],
+                'phone' => $data['phone'] ?? null,
+                'status' => PartnerStatus::Pending,
+                'trust_level' => 'new',
             ]);
         }
 
