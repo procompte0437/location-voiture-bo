@@ -17,10 +17,10 @@ class VehicleSeeder extends Seeder
 {
     public function run(): void
     {
-        $admin = User::where('email', 'admin@locagabon.ga')->first();
+        $admin = User::where('email', 'admin@doto241.com')->first();
 
         $partnerUser = User::firstOrCreate(
-            ['email' => 'partenaire@locagabon.ga'],
+            ['email' => 'partenaire@doto241.com'],
             [
                 'name' => 'Gabon Auto Location',
                 'phone' => '+24106000003',

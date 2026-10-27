@@ -15,7 +15,7 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $superAdmin = User::updateOrCreate(
-            ['email' => 'admin@locagabon.ga'],
+            ['email' => 'admin@doto241.com'],
             [
                 'name' => 'Super Admin',
                 'phone' => '+24106000001',
@@ -28,7 +28,7 @@ class DatabaseSeeder extends Seeder
         );
 
         User::updateOrCreate(
-            ['email' => 'client@locagabon.ga'],
+            ['email' => 'client@doto241.com'],
             [
                 'name' => 'Client Démo',
                 'phone' => '+24106000002',
@@ -58,7 +58,7 @@ class DatabaseSeeder extends Seeder
         }
 
         $pendingUser = User::updateOrCreate(
-            ['email' => 'pending@locagabon.ga'],
+            ['email' => 'pending@doto241.com'],
             [
                 'name' => 'Nouveau Partenaire',
                 'phone' => '+24106000004',
