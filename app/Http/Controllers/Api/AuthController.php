@@ -87,10 +87,26 @@ class AuthController extends Controller
 
         $user = User::where('email', $credentials['email'])->first();
 
+        // Les comptes de démo ont été affichés sur doto241.com avant le renommage en base.
+        $anciennesAdressesDemo = [
+            'admin@doto241.com' => 'admin@locagabon.ga',
+            'client@doto241.com' => 'client@locagabon.ga',
+            'partenaire@doto241.com' => 'partenaire@locagabon.ga',
+            'pending@doto241.com' => 'pending@locagabon.ga',
+        ];
+        $adresseSaisie = $credentials['email'];
+        if (! $user && isset($anciennesAdressesDemo[$adresseSaisie])) {
+            $user = User::where('email', $anciennesAdressesDemo[$adresseSaisie])->first();
+        }
+
         if (! $user || ! Hash::check($credentials['password'], $user->password)) {
             throw ValidationException::withMessages([
                 'email' => ['Identifiants incorrects.'],
             ]);
+        }
+
+        if ($user->email !== $adresseSaisie && isset($anciennesAdressesDemo[$adresseSaisie])) {
+            $user->update(['email' => $adresseSaisie]);
         }
 
         if ($user->status !== 'active') {
