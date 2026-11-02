@@ -280,6 +280,22 @@ class BookingService
         });
     }
 
+    /** Un encaissement réel est arrivé : la demande passe chez le partenaire. */
+    public function marquerPayee(Booking $booking, Payment $payment): void
+    {
+        $booking->update([
+            'status' => BookingStatus::PendingPartner,
+            'payment_method' => $payment->method,
+            'confirmed_at' => null,
+            'locked_until' => null,
+        ]);
+
+        $this->audit->log('payment.confirmed', $booking, null, [
+            'payment_id' => $payment->id,
+            'status' => BookingStatus::PendingPartner->value,
+        ]);
+    }
+
     /** Confirmation admin / commercial : passe la réservation en confirmée. */
     public function confirmByAdmin(Booking $booking): Booking
     {

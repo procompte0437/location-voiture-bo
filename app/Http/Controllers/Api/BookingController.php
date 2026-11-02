@@ -229,6 +229,11 @@ class BookingController extends Controller
 
     public function pay(Request $request, int $id): JsonResponse
     {
+        // Cette route marque payé sans encaisser : elle ne sert plus qu'aux démonstrations locales.
+        if (! config('services.pvit.simulation')) {
+            return response()->json(['message' => 'Utilisez le paiement Mobile Money.'], 410);
+        }
+
         $data = $request->validate([
             'method' => $this->regleMoyenPaiement(),
         ], [

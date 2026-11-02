@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\CatalogController;
 use App\Http\Controllers\Api\ControleurContact;
+use App\Http\Controllers\Api\ControleurPaiement;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\Partenaire\ControleurPartenaire;
 use App\Http\Controllers\Api\VehicleSearchController;
@@ -42,6 +43,11 @@ Route::prefix('v1')->group(function () {
     Route::post('/bookings/guest-lookup', [BookingController::class, 'guestLookup']);
     Route::post('/bookings', [BookingController::class, 'store']);
     Route::post('/bookings/{id}/pay', [BookingController::class, 'pay']);
+
+    Route::get('/catalog/paiement', [ControleurPaiement::class, 'configuration']);
+    Route::post('/bookings/{id}/paiement-mobile', [ControleurPaiement::class, 'lancer'])->middleware('throttle:10,1');
+    Route::get('/bookings/{id}/paiement', [ControleurPaiement::class, 'statut'])->middleware('throttle:40,1');
+    Route::post('/paiements/pvit/notification', [ControleurPaiement::class, 'notification'])->middleware('throttle:120,1');
 
     // Authenticated
     Route::middleware('auth:sanctum')->group(function () {
