@@ -24,17 +24,22 @@ class AuthController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:120'],
             'email' => ['required', 'email', 'max:190', 'unique:utilisateurs,email'],
-            'phone' => ['nullable', 'string', 'max:30', 'unique:utilisateurs,phone'],
+            'phone' => ['nullable', 'required_if:role,partner', 'string', 'max:30', 'unique:utilisateurs,phone'],
             'password' => ['required', 'confirmed', Password::defaults()],
             'role' => ['nullable', 'in:customer,partner'],
+            'company_name' => ['nullable', 'required_if:role,partner', 'string', 'max:160'],
+            'city' => ['nullable', 'required_if:role,partner', 'string', 'max:80'],
         ], [
             'name.required' => 'Le nom est obligatoire.',
             'email.required' => 'L’adresse e-mail est obligatoire.',
             'email.email' => 'L’adresse e-mail n’est pas valide.',
             'email.unique' => 'Cette adresse e-mail est déjà utilisée. Connectez-vous ou choisissez une autre adresse.',
+            'phone.required_if' => 'Le téléphone est obligatoire pour un compte partenaire.',
             'phone.unique' => 'Ce numéro de téléphone est déjà associé à un compte.',
             'password.required' => 'Le mot de passe est obligatoire.',
             'password.confirmed' => 'La confirmation du mot de passe ne correspond pas.',
+            'company_name.required_if' => 'Le nom de l’entreprise est obligatoire.',
+            'city.required_if' => 'La ville est obligatoire pour un compte partenaire.',
         ]);
 
         $role = $data['role'] ?? 'customer';
@@ -56,13 +61,15 @@ class AuthController extends Controller
             ]);
         }
 
-        // Le partenaire complète société, RCCM et adresse dans son espace, pas à l’inscription.
+        // Société, responsable, ville et téléphone suffisent à ouvrir l’espace.
+        // RCCM, NIF et adresse se complètent ensuite dans le dossier partenaire.
         if ($role === UserRole::Partner->value) {
             Partner::create([
                 'owner_user_id' => $user->id,
-                'type' => 'individual',
-                'company_name' => $data['name'],
+                'type' => 'agency',
+                'company_name' => $data['company_name'],
                 'manager_name' => $data['name'],
+                'city' => $data['city'],
                 'phone' => $data['phone'] ?? null,
                 'status' => PartnerStatus::Pending,
                 'trust_level' => 'new',

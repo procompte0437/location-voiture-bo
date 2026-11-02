@@ -93,6 +93,10 @@ class CatalogController extends Controller
         $type = $request->query('type');
         $parentSlug = $request->query('parent_slug');
 
+        if ($type === 'contact_subject') {
+            ReferenceList::assurerSujetsContact();
+        }
+
         $items = ReferenceList::query()
             ->where('is_active', true)
             ->when($type, fn ($q) => $q->where('type', $type))

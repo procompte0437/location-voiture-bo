@@ -107,6 +107,10 @@ Route::prefix('v1')->group(function () {
             Route::patch('/locations/{id}', [AdminController::class, 'updateLocation']);
             Route::delete('/locations/{id}', [AdminController::class, 'deleteLocation']);
             Route::get('/audit-logs', [AdminController::class, 'auditLogs']);
+            Route::get('/referentiel/modele', [AdminController::class, 'modeleReferentielExcel']);
+            Route::get('/vehicules/modele', [AdminController::class, 'modeleVehiculesExcel']);
+            Route::post('/referentiel/apercu', [AdminController::class, 'apercuReferentiel']);
+            Route::post('/referentiel/import', [AdminController::class, 'importerReferentiel']);
             Route::get('/references', [AdminController::class, 'references']);
             Route::post('/references', [AdminController::class, 'storeReference']);
             Route::patch('/references/{id}', [AdminController::class, 'updateReference']);
@@ -129,6 +133,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/users', [AdminController::class, 'users']);
             Route::patch('/users/{id}/status', [AdminController::class, 'updateUserStatus']);
             // Agences par province (carte accueil) — super admin.
+            Route::post('/vehicules/import', [AdminController::class, 'importerVehicules']);
             Route::get('/agences', [AdminController::class, 'agences']);
             Route::post('/agences', [AdminController::class, 'storeAgence']);
             Route::patch('/agences/{id}', [AdminController::class, 'updateAgence']);

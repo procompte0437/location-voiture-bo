@@ -15,9 +15,13 @@ use App\Models\Vehicle;
 use App\Models\VehicleCategory;
 use App\Services\AuditService;
 use App\Services\BookingService;
+use App\Services\ImportReferentielExcel;
+use App\Services\ImportVehiculesExcel;
+use App\Support\ClasseurExcel;
 use App\Support\ProvincesGabon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -362,6 +366,50 @@ class AdminController extends Controller
         return response()->json(['message' => 'Véhicule supprimé.']);
     }
 
+    /** Modèle Excel de la flotte : tous les véhicules en base et leur propriétaire. */
+    public function modeleVehiculesExcel(ImportVehiculesExcel $import): Response
+    {
+        return response($import->modele(), 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="modele-vehicules-doto.xlsx"',
+        ]);
+    }
+
+    /** Rattache tout le fichier au partenaire indiqué, sans le déduire du classeur. */
+    public function importerVehicules(Request $request, ImportVehiculesExcel $import): JsonResponse
+    {
+        if (! $request->user()?->isSuperAdmin()) {
+            return response()->json(['message' => 'Seul le super admin peut charger la base véhicules d’un partenaire.'], 403);
+        }
+
+        $request->validate([
+            'fichier' => ['required', 'file', 'max:4096'],
+            'partenaire_id' => ['nullable', 'integer', 'exists:partenaires,id'],
+        ], [
+            'partenaire_id.exists' => 'Ce partenaire est introuvable.',
+        ]);
+
+        $fichier = $request->file('fichier');
+        if (! $fichier || strtolower($fichier->getClientOriginalExtension()) !== 'xlsx') {
+            return response()->json(['message' => 'Choisissez un fichier Excel au format .xlsx.'], 422);
+        }
+
+        try {
+            $resultat = $import->importer(
+                $fichier->getRealPath() ?: '',
+                $request->filled('partenaire_id') ? (int) $request->input('partenaire_id') : null,
+                $request->user()?->id,
+            );
+        } catch (\RuntimeException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+
+        return response()->json([
+            'message' => 'Base véhicules chargée pour '.$resultat['partenaire'].'.',
+            'data' => $resultat,
+        ]);
+    }
+
     private function validateVehicle(Request $request, ?int $vehicleId = null): array
     {
         $plateRule = $vehicleId
@@ -583,10 +631,82 @@ class AdminController extends Controller
         return response()->json($logs);
     }
 
+    /** Modèle Excel : une ligne d’exemple par liste du référentiel. */
+    public function modeleReferentielExcel(ImportReferentielExcel $import): Response
+    {
+        return response($import->modele(), 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="modele-referentiel-doto.xlsx"',
+        ]);
+    }
+
+    /** Montre le contenu du classeur avant de l’enregistrer dans le référentiel. */
+    public function apercuReferentiel(Request $request): JsonResponse
+    {
+        $request->validate([
+            'fichier' => ['required', 'file', 'max:2048'],
+        ]);
+
+        $fichier = $request->file('fichier');
+        if (! $fichier || strtolower($fichier->getClientOriginalExtension()) !== 'xlsx') {
+            return response()->json(['message' => 'Choisissez un fichier Excel au format .xlsx.'], 422);
+        }
+
+        try {
+            $apercu = ClasseurExcel::apercu($fichier->getRealPath() ?: '');
+        } catch (\RuntimeException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+
+        return response()->json(['data' => $apercu]);
+    }
+
+    /**
+     * Un classeur « Véhicules » met à jour la flotte et ses propriétaires.
+     * Un classeur « Référentiel » met à jour les listes.
+     */
+    public function importerReferentiel(Request $request, ImportReferentielExcel $import, ImportVehiculesExcel $vehicules): JsonResponse
+    {
+        $request->validate([
+            'fichier' => ['required', 'file', 'max:4096'],
+        ]);
+
+        $fichier = $request->file('fichier');
+        if (! $fichier || strtolower($fichier->getClientOriginalExtension()) !== 'xlsx') {
+            return response()->json(['message' => 'Choisissez un fichier Excel au format .xlsx.'], 422);
+        }
+
+        $chemin = $fichier->getRealPath() ?: '';
+
+        try {
+            if (ClasseurExcel::contientColonnes($chemin, ['marque', 'immatriculation'])) {
+                if (! $request->user()?->isSuperAdmin()) {
+                    return response()->json([
+                        'message' => 'Seul le super admin peut remplacer la flotte depuis ce fichier.',
+                    ], 403);
+                }
+                $resultat = $vehicules->importer($chemin, null, $request->user()?->id);
+            } else {
+                $resultat = $import->importer($chemin);
+            }
+        } catch (\RuntimeException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+
+        return response()->json([
+            'message' => 'Import terminé.',
+            'data' => $resultat,
+        ]);
+    }
+
     public function references(Request $request): JsonResponse
     {
         $type = $request->query('type');
         $parentSlug = $request->query('parent_slug');
+
+        if ($type === null || $type === 'contact_subject') {
+            ReferenceList::assurerSujetsContact();
+        }
 
         $items = ReferenceList::query()
             ->when($type, fn ($q) => $q->where('type', $type))
