@@ -97,12 +97,12 @@ class ImportVehiculesExcel
             'Places', 'Portes', 'Bagages', 'Transmission', 'Carburant', 'Climatisation',
             'Kilométrage inclus', 'Caution', 'Âge minimum', 'Années de permis',
             'Mode de réservation', 'Politique d’annulation', 'Prix par jour', 'Description',
-            'Livraison aéroport', 'Annulation gratuite', 'Avec chauffeur', 'Statut', 'Agence',
+            'Livraison aéroport', 'Annulation gratuite', 'Avec chauffeur', 'Statut', 'Agence', 'Photo',
         ];
 
         $lignes = [$entete];
         $vehicules = Vehicle::query()
-            ->with(['partner', 'agency', 'categoryInfo'])
+            ->with(['partner', 'agency', 'categoryInfo', 'media'])
             ->orderBy('partner_id')
             ->orderBy('brand')
             ->orderBy('model')
@@ -124,6 +124,7 @@ class ImportVehiculesExcel
                 ['Carburant', 'Essence, Diesel, Hybride ou Électrique.'],
                 ['Statut', 'Brouillon, À valider, Publié, Suspendu ou Archivé.'],
                 ['Agence', 'Nom d’une agence de ce propriétaire. Vide si le véhicule n’est pas rattaché.'],
+                ['Photo', 'Facultatif. Adresse complète (https://…) ou chemin d’une image du site (images/vehicules/…). Vide : la photo actuelle est conservée.'],
                 ['', 'Le fichier contient déjà tous les véhicules en base. Modifiez une ligne pour la remplacer, ou ajoutez-en une pour créer un véhicule.'],
             ],
         ]);
@@ -200,6 +201,7 @@ class ImportVehiculesExcel
                 'archived' => 'Archivé',
             ]),
             (string) ($vehicule->agency?->name ?? ''),
+            (string) ($vehicule->media->firstWhere('is_cover', true)?->url ?? $vehicule->media->first()?->url ?? ''),
         ];
     }
 
@@ -341,6 +343,8 @@ class ImportVehiculesExcel
             throw new RuntimeException('Le prix par jour est obligatoire (au moins 1 000 FCFA).');
         }
 
+        $photo = $this->photo($ligne['photo'] ?? '');
+
         $valeurs = [
             'partner_id' => $partenaire->id,
             'agency_id' => $this->agence($ligne['agence'] ?? '', $partenaire->id),
@@ -380,13 +384,55 @@ class ImportVehiculesExcel
 
         if ($existant) {
             $existant->update($valeurs);
+            $this->definirPhoto($existant, $photo);
 
             return 'mis_a_jour';
         }
 
-        Vehicle::query()->create($valeurs);
+        $this->definirPhoto(Vehicle::query()->create($valeurs), $photo);
 
         return 'cree';
+    }
+
+    /**
+     * Le chemin d’une image du site devient une adresse complète :
+     * le frontend n’est pas forcément servi par le même domaine que l’API.
+     */
+    private function photo(string $valeur): ?string
+    {
+        $photo = trim($valeur);
+        if ($photo === '') {
+            return null;
+        }
+
+        $estAdresse = preg_match('#^https?://#i', $photo) === 1 && filter_var($photo, FILTER_VALIDATE_URL) !== false;
+        $estChemin = preg_match('#^/?[\w\-/]+(\.[\w\-]+)*\.(jpe?g|png|webp)$#i', $photo) === 1 && ! str_contains($photo, '..');
+        if (! $estAdresse && ! $estChemin) {
+            throw new RuntimeException('Photo invalide : indiquez une adresse https:// ou le chemin d’une image du site.');
+        }
+
+        $adresse = $estAdresse ? $photo : url(ltrim($photo, '/'));
+        if (strlen($adresse) > 255) {
+            throw new RuntimeException('L’adresse de la photo dépasse 255 caractères.');
+        }
+
+        return $adresse;
+    }
+
+    private function definirPhoto(Vehicle $vehicule, ?string $photo): void
+    {
+        if ($photo === null) {
+            return;
+        }
+
+        $couverture = $vehicule->media()->where('is_cover', true)->first() ?? $vehicule->media()->first();
+        if ($couverture) {
+            $couverture->update(['url' => $photo, 'is_cover' => true]);
+
+            return;
+        }
+
+        $vehicule->media()->create(['url' => $photo, 'sort_order' => 0, 'is_cover' => true]);
     }
 
     private function categorie(string $valeur): string

@@ -88,6 +88,7 @@ class DatabaseSeeder extends Seeder
             VehicleCategorySeeder::class,
             SiteContentSeeder::class,
             VehicleSeeder::class,
+            BaneServiceAutoSeeder::class,
         ]);
 
         unset($superAdmin);
