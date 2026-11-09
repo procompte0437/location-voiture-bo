@@ -61,6 +61,34 @@ class FlotteBaneServiceAutoTest extends TestCase
         $this->assertSame(1, User::where('email', 'baneservicesauto@gmail.com')->count());
     }
 
+    public function test_un_app_url_sans_https_donne_quand_meme_une_adresse_valide(): void
+    {
+        config(['app.url' => 'location-voiture-bo-production.up.railway.app']);
+
+        $this->assertSame(
+            'https://location-voiture-bo-production.up.railway.app/images/vehicules/bane/kia-k5.jpg',
+            BaneServiceAutoSeeder::adressePhoto('images/vehicules/bane/kia-k5.jpg')
+        );
+    }
+
+    public function test_relancer_le_seeder_repare_les_photos_mal_enregistrees(): void
+    {
+        $avante = Vehicle::where('plate_number', 'LY-927-AA')->firstOrFail();
+        $avante->media()->update(['url' => 'http://localhost/location-voiture-bo-production.up.railway.app/images/vehicules/bane/hyundai-avante.jpg']);
+        $genesis = Vehicle::where('plate_number', 'KR-741-AA')->firstOrFail();
+        $genesis->media()->update(['url' => 'https://exemple.com/vraie-photo.jpg']);
+        config(['app.url' => 'location-voiture-bo-production.up.railway.app']);
+
+        $this->seed(BaneServiceAutoSeeder::class);
+
+        $this->assertSame(
+            'https://location-voiture-bo-production.up.railway.app/images/vehicules/bane/hyundai-avante.jpg',
+            $avante->media()->value('url')
+        );
+        $this->assertSame('https://exemple.com/vraie-photo.jpg', $genesis->media()->value('url'));
+        $this->assertSame(1, $avante->media()->count());
+    }
+
     public function test_le_fichier_livre_est_a_jour(): void
     {
         $attendu = ClasseurExcel::lireFeuille($this->ecrireTemporaire(BaneServiceAutoSeeder::classeurExcel()), ['marque', 'immatriculation']);

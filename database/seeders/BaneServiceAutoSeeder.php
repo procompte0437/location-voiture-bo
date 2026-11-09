@@ -214,14 +214,41 @@ class BaneServiceAutoSeeder extends Seeder
                 [...$vehicule, 'partner_id' => $partenaire->id, 'agency_id' => $agence->id]
             );
 
+            $adresse = self::adressePhoto($photo);
             if ($enregistre->wasRecentlyCreated) {
                 $enregistre->media()->create([
-                    'url' => url($photo),
+                    'url' => $adresse,
                     'sort_order' => 0,
                     'is_cover' => true,
                 ]);
+
+                continue;
             }
+
+            // Répare une photo de la flotte enregistrée avec une mauvaise adresse
+            // (APP_URL sans https://) sans toucher à une photo changée depuis.
+            $enregistre->media()
+                ->where('url', 'like', '%/'.$photo)
+                ->where('url', '!=', $adresse)
+                ->update(['url' => $adresse]);
         }
+    }
+
+    /**
+     * Adresse complète d’une image du site. En console, url() se fie à APP_URL :
+     * sans schéma, Laravel produirait « http://localhost/<domaine>/… ».
+     */
+    public static function adressePhoto(string $chemin): string
+    {
+        $base = rtrim(trim((string) config('app.url')), '/');
+        if ($base === '') {
+            return url($chemin);
+        }
+        if (! preg_match('#^https?://#i', $base)) {
+            $base = 'https://'.ltrim($base, '/');
+        }
+
+        return $base.'/'.ltrim($chemin, '/');
     }
 
     /**
