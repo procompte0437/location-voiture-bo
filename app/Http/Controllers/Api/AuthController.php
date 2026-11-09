@@ -11,7 +11,9 @@ use App\Models\User;
 use App\Services\AuditService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 
@@ -147,5 +149,141 @@ class AuthController extends Controller
         $user->currentAccessToken()->delete();
 
         return response()->json(['message' => 'Déconnecté.']);
+    }
+
+    /**
+     * Le titulaire met à jour son identité. Le rôle et le statut restent du ressort de l’administration.
+     */
+    public function mettreAJourProfil(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:120'],
+            'email' => ['required', 'email', 'max:190', 'unique:utilisateurs,email,'.$user->id],
+            'phone' => ['nullable', 'string', 'max:30', 'unique:utilisateurs,phone,'.$user->id],
+            'locale' => ['required', 'in:fr,en'],
+        ], [
+            'name.required' => 'Le nom est obligatoire.',
+            'email.required' => 'L’adresse e-mail est obligatoire.',
+            'email.email' => 'L’adresse e-mail n’est pas valide.',
+            'email.unique' => 'Cette adresse e-mail est déjà utilisée.',
+            'phone.unique' => 'Ce numéro de téléphone est déjà associé à un compte.',
+            'locale.in' => 'La langue doit être le français ou l’anglais.',
+        ]);
+
+        $avant = $user->only(['name', 'email', 'phone', 'locale']);
+        $user->update([
+            'name' => $data['name'],
+            'email' => $data['email'],
+            'phone' => $data['phone'] !== '' ? $data['phone'] : null,
+            'locale' => $data['locale'],
+        ]);
+        $this->audit->log('auth.profil.modifie', $user, $avant, $user->only(['name', 'email', 'phone', 'locale']), $user->id);
+
+        return $this->reponseCompte($user, 'Profil enregistré.');
+    }
+
+    /** Change le mot de passe après vérification de l’actuel, pour éviter une prise de session ouverte. */
+    public function changerMotDePasse(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $data = $request->validate([
+            'mot_de_passe_actuel' => ['required', 'string'],
+            'password' => ['required', 'confirmed', Password::defaults()],
+        ], [
+            'mot_de_passe_actuel.required' => 'Le mot de passe actuel est obligatoire.',
+            'password.required' => 'Le nouveau mot de passe est obligatoire.',
+            'password.confirmed' => 'La confirmation du mot de passe ne correspond pas.',
+            'password.min' => 'Le nouveau mot de passe doit contenir au moins 8 caractères.',
+        ]);
+
+        if (! Hash::check($data['mot_de_passe_actuel'], $user->password)) {
+            throw ValidationException::withMessages([
+                'mot_de_passe_actuel' => ['Le mot de passe actuel est incorrect.'],
+            ]);
+        }
+
+        $user->update(['password' => $data['password']]);
+        $this->audit->log('auth.mot_de_passe.modifie', $user, null, null, $user->id);
+
+        return response()->json(['message' => 'Mot de passe modifié.']);
+    }
+
+    public function mettreAJourPhoto(Request $request): JsonResponse
+    {
+        $request->validate([
+            'photo' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+        ], [
+            'photo.required' => 'Choisissez une photo.',
+            'photo.image' => 'Le fichier doit être une image.',
+            'photo.mimes' => 'Formats acceptés : JPG, PNG ou WebP.',
+            'photo.max' => 'La photo ne doit pas dépasser 2 Mo.',
+        ]);
+
+        $user = $request->user();
+        $this->supprimerFichierPhoto($user->photo, $user->id);
+
+        $fichier = $request->file('photo');
+        $url = $this->enregistrerPhoto($fichier, $user->id);
+        $user->update(['photo' => $url]);
+        $this->audit->log('auth.photo.modifiee', $user, null, ['photo' => $url], $user->id);
+
+        return $this->reponseCompte($user, 'Photo de profil enregistrée.');
+    }
+
+    public function supprimerPhoto(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $this->supprimerFichierPhoto($user->photo, $user->id);
+        $user->update(['photo' => null]);
+        $this->audit->log('auth.photo.supprimee', $user, null, null, $user->id);
+
+        return $this->reponseCompte($user, 'Photo de profil retirée.');
+    }
+
+    private function reponseCompte(User $user, string $message): JsonResponse
+    {
+        return response()->json([
+            'message' => $message,
+            'user' => $user->fresh()->load('customerProfile', 'ownedPartner'),
+        ]);
+    }
+
+    /** Range l’image sous public/images/profils, déjà servi par le site sans lien symbolique. */
+    private function enregistrerPhoto(UploadedFile $fichier, int $utilisateurId): string
+    {
+        $dossier = public_path('images/profils');
+        if (! is_dir($dossier)) {
+            mkdir($dossier, 0755, true);
+        }
+
+        $extension = strtolower($fichier->guessExtension() ?: 'jpg');
+        if (! in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true)) {
+            $extension = 'jpg';
+        }
+
+        $nom = 'profil-'.$utilisateurId.'-'.Str::uuid().'.'.$extension;
+        $fichier->move($dossier, $nom);
+
+        return url('images/profils/'.$nom);
+    }
+
+    /** N’efface que le fichier déposé pour ce compte, jamais un chemin arbitraire. */
+    private function supprimerFichierPhoto(?string $url, int $utilisateurId): void
+    {
+        if (! $url) {
+            return;
+        }
+
+        $chemin = (string) parse_url($url, PHP_URL_PATH);
+        $nom = basename($chemin);
+        if (! preg_match('/^profil-'.$utilisateurId.'-[A-Za-z0-9\-]+\.(jpe?g|png|webp)$/', $nom)) {
+            return;
+        }
+
+        $absolu = public_path('images/profils/'.$nom);
+        if (is_file($absolu)) {
+            unlink($absolu);
+        }
     }
 }

@@ -52,6 +52,10 @@ Route::prefix('v1')->group(function () {
     // Authenticated
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('/auth/me', [AuthController::class, 'me']);
+        Route::patch('/auth/profil', [AuthController::class, 'mettreAJourProfil']);
+        Route::post('/auth/mot-de-passe', [AuthController::class, 'changerMotDePasse']);
+        Route::post('/auth/photo', [AuthController::class, 'mettreAJourPhoto']);
+        Route::delete('/auth/photo', [AuthController::class, 'supprimerPhoto']);
         Route::post('/auth/logout', [AuthController::class, 'logout']);
 
         Route::get('/bookings', [BookingController::class, 'index']);
