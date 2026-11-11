@@ -122,7 +122,7 @@ class BookingController extends Controller
         $user = $request->user();
         $this->claimGuestBookings($user);
 
-        $bookings = Booking::with(['vehicle.media', 'pickupLocation'])
+        $bookings = Booking::with(['vehicle.media', 'pickupLocation', 'review:id,booking_id,rating_overall'])
             ->where(function ($q) use ($user) {
                 $q->where('customer_id', $user->id)
                     ->orWhere('guest_email', $user->email);

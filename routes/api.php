@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\Admin\AdminController;
 use App\Http\Controllers\Api\Admin\ControleurDocumentsAdmin;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\ControleurAvis;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\CatalogController;
 use App\Http\Controllers\Api\ControleurContact;
@@ -41,6 +42,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/vehicules/disponibilite', [VehicleSearchController::class, 'disponibilite']);
     Route::get('/vehicles/{id}', [VehicleSearchController::class, 'show']);
     Route::get('/vehicles/{id}/availability', [VehicleSearchController::class, 'availability']);
+    Route::get('/vehicles/{id}/avis', [ControleurAvis::class, 'duVehicule'])->whereNumber('id');
 
     Route::post('/auth/register', [AuthController::class, 'register']);
     Route::post('/auth/login', [AuthController::class, 'login']);
@@ -69,6 +71,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/bookings/{id}', [BookingController::class, 'show']);
         Route::get('/bookings/{id}/contrat', [BookingController::class, 'recapitulatif']);
         Route::post('/bookings/{id}/annuler', [BookingController::class, 'annuler']);
+        Route::post('/bookings/{id}/avis', [ControleurAvis::class, 'deposer'])->whereNumber('id')->middleware('throttle:10,1');
         Route::delete('/bookings/{id}', [BookingController::class, 'supprimer']);
 
         // Inscription dossier : utilisateur authentifié (devient partenaire).
@@ -110,6 +113,8 @@ Route::prefix('v1')->group(function () {
             Route::get('/moi/exports/{type}', [ControleurGestionLoueur::class, 'exporter'])->whereIn('type', ['reservations', 'mouvements', 'finances', 'entretiens']);
 
             // Pièces du dossier et des véhicules (stockées en privé).
+            Route::get('/moi/avis', [ControleurAvis::class, 'duPartenaire']);
+            Route::post('/moi/avis/{id}/repondre', [ControleurAvis::class, 'repondre'])->whereNumber('id');
             Route::get('/moi/documents', [ControleurDocumentsPartenaire::class, 'index']);
             Route::post('/moi/documents', [ControleurDocumentsPartenaire::class, 'deposer'])->middleware('throttle:30,1');
             Route::get('/moi/documents/{id}/fichier', [ControleurDocumentsPartenaire::class, 'telecharger'])->whereNumber('id');
@@ -153,6 +158,8 @@ Route::prefix('v1')->group(function () {
             Route::patch('/locations/{id}', [AdminController::class, 'updateLocation']);
             Route::delete('/locations/{id}', [AdminController::class, 'deleteLocation']);
             Route::get('/audit-logs', [AdminController::class, 'auditLogs']);
+            Route::get('/avis', [ControleurAvis::class, 'pourAdmin']);
+            Route::post('/avis/{id}/moderer', [ControleurAvis::class, 'moderer'])->whereNumber('id');
             Route::get('/referentiel/modele', [AdminController::class, 'modeleReferentielExcel']);
             Route::get('/vehicules/modele', [AdminController::class, 'modeleVehiculesExcel']);
             Route::post('/referentiel/apercu', [AdminController::class, 'apercuReferentiel']);
