@@ -331,6 +331,7 @@ class BookingService
         ]);
 
         $this->audit->log('booking.confirmed_by_admin', $booking, $avant, $booking->fresh()->toArray());
+        app(\App\Services\Notificateur::class)->reservationConfirmee($booking);
 
         return $booking->fresh(['vehicle', 'partner', 'customer', 'pickupLocation']);
     }
@@ -366,6 +367,7 @@ class BookingService
         ]);
 
         $this->audit->log('booking.cancelled_by_customer', $booking, $avant, $booking->fresh()->toArray());
+        app(\App\Services\Notificateur::class)->reservationAnnulee($booking, 'client');
 
         return $booking->fresh(['vehicle', 'customer', 'pickupLocation']);
     }
@@ -421,6 +423,7 @@ class BookingService
         ]);
 
         $this->audit->log('booking.cancelled_by_admin', $booking, $avant, $booking->fresh()->toArray());
+        app(\App\Services\Notificateur::class)->reservationAnnulee($booking, 'admin', $raison);
 
         return $booking->fresh(['vehicle', 'partner', 'customer', 'pickupLocation']);
     }
@@ -444,6 +447,7 @@ class BookingService
         $booking->update(['status' => BookingStatus::Completed]);
 
         $this->audit->log('booking.completed_by_admin', $booking, $avant, $booking->fresh()->toArray());
+        app(\App\Services\Notificateur::class)->demandeAvis($booking);
 
         return $booking->fresh(['vehicle', 'partner', 'customer', 'pickupLocation']);
     }

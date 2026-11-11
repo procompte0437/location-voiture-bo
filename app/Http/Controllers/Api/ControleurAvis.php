@@ -66,6 +66,7 @@ class ControleurAvis extends Controller
         ]);
         self::recalculer($reservation->partner);
         $this->audit->log('review.created', $avis, null, $avis->toArray());
+        app(\App\Services\Notificateur::class)->nouvelAvis($avis);
 
         return response()->json(['message' => 'Merci pour votre avis !', 'data' => $this->presenterPublic($avis)], 201);
     }

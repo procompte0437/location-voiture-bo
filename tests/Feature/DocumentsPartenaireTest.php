@@ -129,7 +129,8 @@ class DocumentsPartenaireTest extends TestCase
             'pickup_at' => now()->addDays(2)->format('Y-m-d H:i'),
             'return_at' => now()->addDays(4)->format('Y-m-d H:i'),
             'driver_age' => 30, 'guest_name' => 'Test', 'guest_email' => 't@t.ga', 'guest_phone' => '+24100000000',
-        ])->assertStatus(422);
+            'payment_method' => 'airtel_money',
+        ])->assertStatus(422)->assertJsonValidationErrors('vehicle_id');
     }
 
     private function trouve(string $modele): bool

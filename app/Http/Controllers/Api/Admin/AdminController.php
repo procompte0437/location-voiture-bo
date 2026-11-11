@@ -124,6 +124,7 @@ class AdminController extends Controller
         ]);
 
         $this->audit->log('partner.approved', $partner, $before, $partner->toArray());
+        app(\App\Services\Notificateur::class)->statutDossier($partner, 'approved');
 
         return response()->json([
             'data' => $partner,
@@ -148,6 +149,7 @@ class AdminController extends Controller
         ]);
 
         $this->audit->log('partner.rejected', $partner, $before, $partner->toArray());
+        app(\App\Services\Notificateur::class)->statutDossier($partner, 'rejected', $data['reason']);
 
         return response()->json(['data' => $partner, 'message' => 'Partenaire refusé.']);
     }
@@ -167,6 +169,7 @@ class AdminController extends Controller
         ]);
 
         $this->audit->log('partner.info_requested', $partner, $before, $partner->toArray());
+        app(\App\Services\Notificateur::class)->statutDossier($partner, 'info_requested', $data['message']);
 
         return response()->json(['data' => $partner]);
     }
@@ -190,6 +193,7 @@ class AdminController extends Controller
             ->update(['status' => VehicleStatus::Suspended]);
 
         $this->audit->log('partner.suspended', $partner, $before, $partner->toArray());
+        app(\App\Services\Notificateur::class)->statutDossier($partner, 'suspended', $data['reason']);
 
         return response()->json(['data' => $partner, 'message' => 'Partenaire suspendu. Annonces dépubliées.']);
     }

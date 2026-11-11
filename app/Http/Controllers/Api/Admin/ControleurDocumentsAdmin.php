@@ -78,6 +78,13 @@ class ControleurDocumentsAdmin extends Controller
         $avant = $document->toArray();
         $document->update(['status' => 'rejected', 'rejection_reason' => $donnees['motif']]);
         $this->audit->log('document.rejected', $document, $avant, $document->fresh()->toArray());
+        $partenaire = $document instanceof PartnerDocument ? $document->partner : $document->vehicle?->partner;
+        $piece = $document instanceof PartnerDocument
+            ? (Pieces::PARTENAIRE[$document->type]['libelle'] ?? $document->type)
+            : (Pieces::VEHICULE[$document->type]['libelle'] ?? $document->type).' — '.trim($document->vehicle?->brand.' '.$document->vehicle?->model).' ('.$document->vehicle?->plate_number.')';
+        if ($partenaire) {
+            app(\App\Services\Notificateur::class)->pieceRefusee($partenaire->loadMissing('owner'), $piece, $donnees['motif']);
+        }
 
         return response()->json(['message' => 'Pièce refusée : le partenaire voit le motif.', 'data' => $this->presenter($document->fresh())]);
     }

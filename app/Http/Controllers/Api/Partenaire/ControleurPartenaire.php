@@ -87,6 +87,7 @@ class ControleurPartenaire extends Controller
         $utilisateur->update(['role' => UserRole::Partner]);
 
         $this->audit->log('partner.registered', $partenaire, null, $partenaire->toArray(), $utilisateur->id);
+        app(\App\Services\Notificateur::class)->dossierRecu($partenaire->load('owner'));
 
         return response()->json([
             'data' => $partenaire,

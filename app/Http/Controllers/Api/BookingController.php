@@ -61,6 +61,7 @@ class BookingController extends Controller
         }
 
         $booking = $this->bookings->create($data, $user->id);
+        app(\App\Services\Notificateur::class)->demandeCreee($booking);
 
         return response()->json([
             'data' => $this->masquerProprietaire($booking),

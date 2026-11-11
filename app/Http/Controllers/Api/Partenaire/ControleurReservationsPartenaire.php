@@ -48,11 +48,14 @@ class ControleurReservationsPartenaire extends Controller
             throw ValidationException::withMessages(['status' => ['Le départ est passé : la demande ne peut plus être acceptée.']]);
         }
 
-        return $this->changer($reservation, 'booking.accepted_by_partner', [
+        $reponse = $this->changer($reservation, 'booking.accepted_by_partner', [
             'status' => BookingStatus::Confirmed,
             'confirmed_at' => now(),
             'locked_until' => null,
         ]);
+        app(\App\Services\Notificateur::class)->reservationConfirmee($reservation);
+
+        return $reponse;
     }
 
     public function refuser(Request $requete, int $id): JsonResponse
@@ -64,12 +67,15 @@ class ControleurReservationsPartenaire extends Controller
         $this->exigerStatut($reservation, [BookingStatus::PendingPartner, BookingStatus::PendingPayment, BookingStatus::Locked], 'Cette demande n’est plus en attente de réponse.');
 
         // Un paiement déjà reçu reste à rembourser par l’administration : le journal le signale.
-        return $this->changer($reservation, 'booking.refused_by_partner', [
+        $reponse = $this->changer($reservation, 'booking.refused_by_partner', [
             'status' => BookingStatus::Refused,
             'cancelled_at' => now(),
             'cancellation_reason' => $donnees['motif'],
             'locked_until' => null,
         ], ['paiement_a_rembourser' => $this->totalRegle($reservation) > 0]);
+        app(\App\Services\Notificateur::class)->reservationRefusee($reservation, $donnees['motif']);
+
+        return $reponse;
     }
 
     public function sortie(Request $requete, int $id): JsonResponse
@@ -107,11 +113,14 @@ class ControleurReservationsPartenaire extends Controller
             ]);
         }
 
-        return DB::transaction(function () use ($reservation, $donnees, $requete) {
+        $reponse = DB::transaction(function () use ($reservation, $donnees, $requete) {
             EtatDesLieux::create([...$donnees, 'booking_id' => $reservation->id, 'type' => 'retour', 'cree_par' => $requete->user()->id]);
 
             return $this->changer($reservation, 'booking.return_recorded', ['status' => BookingStatus::Completed], $donnees);
         });
+        app(\App\Services\Notificateur::class)->demandeAvis($reservation);
+
+        return $reponse;
     }
 
     /** Encaissement reçu en agence (espèces, Mobile Money direct, virement). */
