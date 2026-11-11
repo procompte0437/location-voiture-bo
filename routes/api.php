@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Admin\AdminController;
+use App\Http\Controllers\Api\Admin\ControleurDocumentsAdmin;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\CatalogController;
@@ -8,6 +9,7 @@ use App\Http\Controllers\Api\ControleurContact;
 use App\Http\Controllers\Api\ControleurMotDePasse;
 use App\Http\Controllers\Api\ControleurPaiement;
 use App\Http\Controllers\Api\LocationController;
+use App\Http\Controllers\Api\Partenaire\ControleurDocumentsPartenaire;
 use App\Http\Controllers\Api\Partenaire\ControleurGestionLoueur;
 use App\Http\Controllers\Api\Partenaire\ControleurPartenaire;
 use App\Http\Controllers\Api\Partenaire\ControleurReservationsPartenaire;
@@ -107,6 +109,13 @@ Route::prefix('v1')->group(function () {
             Route::delete('/moi/membres/{id}', [ControleurGestionLoueur::class, 'retirerMembre'])->whereNumber('id');
             Route::get('/moi/exports/{type}', [ControleurGestionLoueur::class, 'exporter'])->whereIn('type', ['reservations', 'mouvements', 'finances', 'entretiens']);
 
+            // Pièces du dossier et des véhicules (stockées en privé).
+            Route::get('/moi/documents', [ControleurDocumentsPartenaire::class, 'index']);
+            Route::post('/moi/documents', [ControleurDocumentsPartenaire::class, 'deposer'])->middleware('throttle:30,1');
+            Route::get('/moi/documents/{id}/fichier', [ControleurDocumentsPartenaire::class, 'telecharger'])->whereNumber('id');
+            Route::post('/moi/vehicules/{id}/documents', [ControleurDocumentsPartenaire::class, 'deposerVehicule'])->whereNumber('id')->middleware('throttle:60,1');
+            Route::get('/moi/documents-vehicules/{id}/fichier', [ControleurDocumentsPartenaire::class, 'telechargerVehicule'])->whereNumber('id');
+
             Route::get('/me', [ControleurPartenaire::class, 'moi']);
             Route::get('/me/dashboard', [ControleurPartenaire::class, 'tableauDeBord']);
             Route::get('/me/vehicles', [ControleurPartenaire::class, 'vehicules']);
@@ -166,6 +175,10 @@ Route::prefix('v1')->group(function () {
             Route::post('/partners/{id}/approve', [AdminController::class, 'approvePartner']);
             Route::post('/partners/{id}/reject', [AdminController::class, 'rejectPartner']);
             Route::post('/partners/{id}/request-info', [AdminController::class, 'requestPartnerInfo']);
+            Route::get('/partners/{id}/dossier', [ControleurDocumentsAdmin::class, 'dossier'])->whereNumber('id');
+            Route::get('/documents/{genre}/{id}/fichier', [ControleurDocumentsAdmin::class, 'telecharger'])->whereIn('genre', ['partenaire', 'vehicule'])->whereNumber('id');
+            Route::post('/documents/{genre}/{id}/accepter', [ControleurDocumentsAdmin::class, 'accepter'])->whereIn('genre', ['partenaire', 'vehicule'])->whereNumber('id');
+            Route::post('/documents/{genre}/{id}/refuser', [ControleurDocumentsAdmin::class, 'refuser'])->whereIn('genre', ['partenaire', 'vehicule'])->whereNumber('id');
             Route::post('/partners/{id}/suspend', [AdminController::class, 'suspendPartner']);
             Route::get('/users', [AdminController::class, 'users']);
             Route::patch('/users/{id}/status', [AdminController::class, 'updateUserStatus']);

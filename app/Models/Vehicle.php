@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use App\Enums\VehicleStatus;
+use App\Support\PiecesJustificatives;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -57,6 +59,27 @@ class Vehicle extends Model
     public function documents(): HasMany
     {
         return $this->hasMany(VehicleDocument::class);
+    }
+
+    /**
+     * Retire un véhicule dont l’assurance ou la visite technique a expiré.
+     * Un véhicule sans pièce déposée reste visible : l’obligation se règle à la validation.
+     */
+    public function scopeDocumentsEnRegle(Builder $requete): Builder
+    {
+        return $requete->whereDoesntHave('documents', fn (Builder $q) => $q
+            ->whereIn('type', PiecesJustificatives::VEHICULE_BLOQUANTES)
+            ->whereNotNull('expires_at')
+            ->whereDate('expires_at', '<', today()));
+    }
+
+    public function aUnDocumentExpire(): bool
+    {
+        return $this->documents()
+            ->whereIn('type', PiecesJustificatives::VEHICULE_BLOQUANTES)
+            ->whereNotNull('expires_at')
+            ->whereDate('expires_at', '<', today())
+            ->exists();
     }
 
     public function pricingRules(): HasMany

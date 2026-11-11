@@ -10,12 +10,15 @@ class PartnerDocument extends Model
     protected $table = 'documents_partenaires';
 
     protected $fillable = [
-        'partner_id', 'type', 'file_path', 'status', 'rejection_reason', 'expires_at',
+        'partner_id', 'type', 'file_path', 'status', 'rejection_reason', 'expires_at', 'nom_original',
     ];
+
+    /** Le chemin interne du fichier ne sort jamais de l’API. */
+    protected $hidden = ['file_path'];
 
     protected function casts(): array
     {
-        return ['expires_at' => 'date'];
+        return ['expires_at' => 'date:Y-m-d'];
     }
 
     public function partner(): BelongsTo

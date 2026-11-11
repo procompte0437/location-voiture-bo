@@ -57,6 +57,7 @@ class VehicleSearchController extends Controller
                 'blocks' => fn ($q) => $q->where('ends_at', '>', now())->orderBy('starts_at'),
             ])
             ->where('status', VehicleStatus::Published)
+            ->documentsEnRegle()
             ->whereHas('partner', fn ($q) => $q->where('status', PartnerStatus::Approved));
 
         if (! empty($data['location_id'])) {
@@ -248,6 +249,7 @@ class VehicleSearchController extends Controller
                 'blocks' => fn ($q) => $q->where('ends_at', '>', $pickup)->orderBy('starts_at'),
             ])
             ->where('status', VehicleStatus::Published)
+            ->documentsEnRegle()
             ->whereHas('partner', fn ($q) => $q->where('status', PartnerStatus::Approved));
 
         if (! empty($data['location_id'])) {
@@ -321,6 +323,7 @@ class VehicleSearchController extends Controller
             'blocks' => fn ($q) => $q->where('ends_at', '>', now())->orderBy('starts_at'),
         ])
             ->where('status', VehicleStatus::Published)
+            ->documentsEnRegle()
             ->findOrFail($id);
 
         return response()->json(['data' => $this->transformVehicle($vehicle)]);

@@ -136,6 +136,7 @@ class CatalogController extends Controller
                 'agency.location',
             ])
             ->where('status', VehicleStatus::Published)
+            ->documentsEnRegle()
             ->whereHas('partner', fn ($pq) => $pq->where('status', PartnerStatus::Approved))
             ->when($q, function ($query) use ($q) {
                 $query->where(function ($inner) use ($q) {
@@ -256,6 +257,7 @@ class CatalogController extends Controller
 
         $slugsCategories = Vehicle::query()
             ->where('status', VehicleStatus::Published)
+            ->documentsEnRegle()
             ->whereHas('partner', fn ($q) => $q->where('status', PartnerStatus::Approved))
             ->where(function ($q) use ($slug) {
                 $q->whereHas('agency', fn ($aq) => $aq->where('province_slug', $slug)->where('is_active', true))

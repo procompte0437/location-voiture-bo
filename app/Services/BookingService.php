@@ -179,7 +179,8 @@ class BookingService
         $vehicle = Vehicle::with('partner')->findOrFail($data['vehicle_id']);
 
         if ($vehicle->status !== VehicleStatus::Published
-            || $vehicle->partner->status !== PartnerStatus::Approved) {
+            || $vehicle->partner->status !== PartnerStatus::Approved
+            || $vehicle->aUnDocumentExpire()) {
             throw ValidationException::withMessages([
                 'vehicle_id' => 'Ce véhicule n\'est pas disponible à la réservation.',
             ]);
