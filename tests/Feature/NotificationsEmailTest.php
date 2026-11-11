@@ -58,6 +58,7 @@ class NotificationsEmailTest extends TestCase
     {
         Notification::fake();
         $vehicule = Vehicle::where('partner_id', $this->partenaire->id)->firstOrFail();
+        $vehicule->update(['booking_mode' => 'on_request']);
 
         Sanctum::actingAs($this->client);
         $id = $this->postJson('/api/v1/bookings', [

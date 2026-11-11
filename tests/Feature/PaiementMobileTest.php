@@ -36,7 +36,7 @@ class PaiementMobileTest extends TestCase
         ]);
     }
 
-    private function reservation(int $montant = 60000): Booking
+    private function reservation(int $montant = 60000, string $mode = 'on_request'): Booking
     {
         $proprietaire = User::create([
             'name' => 'Loueur', 'email' => 'loueur@example.test', 'password' => 'password', 'role' => 'partner', 'status' => 'active',
@@ -46,7 +46,7 @@ class PaiementMobileTest extends TestCase
         ]);
         $vehicule = Vehicle::create([
             'partner_id' => $partenaire->id, 'brand' => 'Toyota', 'model' => 'Yaris', 'category' => 'city_car', 'plate_number' => 'GA-TEST-1',
-            'seats' => 5, 'transmission' => 'manual', 'fuel' => 'petrol', 'price_per_day' => 20000, 'status' => VehicleStatus::Published,
+            'seats' => 5, 'transmission' => 'manual', 'fuel' => 'petrol', 'price_per_day' => 20000, 'status' => VehicleStatus::Published, 'booking_mode' => $mode,
         ]);
 
         return Booking::create([
@@ -129,6 +129,21 @@ class PaiementMobileTest extends TestCase
         $this->assertSame('paid', $paiement->fresh()->status);
         $this->assertEquals($paye, $paiement->fresh()->paid_at);
         $this->assertSame(BookingStatus::PendingPartner, $reservation->fresh()->status);
+    }
+
+    public function test_en_mode_instantane_le_paiement_confirme_la_reservation(): void
+    {
+        $this->fauxPvit();
+        $reservation = $this->reservation(60000, 'instant');
+        $this->lancer($reservation)->assertCreated();
+        $paiement = Payment::query()->latest('id')->first();
+
+        $this->postJson('/api/v1/paiements/pvit/notification', [
+            'transactionId' => 'PAY001', 'merchantReferenceId' => $paiement->transaction_ref, 'code' => 200,
+        ])->assertOk();
+
+        $this->assertSame(BookingStatus::Confirmed, $reservation->fresh()->status);
+        $this->assertNotNull($reservation->fresh()->confirmed_at);
     }
 
     public function test_un_montant_different_ne_valide_pas_le_paiement(): void

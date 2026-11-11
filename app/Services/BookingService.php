@@ -212,10 +212,11 @@ class BookingService
         $subtotal = $days * $vehicle->price_per_day;
         $commissionRate = (float) $vehicle->partner->commission_rate;
         $commission = (int) round($subtotal * ($commissionRate / 100));
+        $instantane = $vehicle->booking_mode === 'instant';
 
         return DB::transaction(function () use (
             $data, $customerId, $vehicle, $pickup, $return, $days,
-            $subtotal, $commission, $commissionRate, $driverAge
+            $subtotal, $commission, $commissionRate, $driverAge, $instantane
         ) {
             $booking = Booking::create([
                 'reference' => 'LG-'.strtoupper(Str::random(8)),
@@ -231,7 +232,9 @@ class BookingService
                 'return_at' => $return,
                 'driver_age' => $driverAge,
                 'payment_method' => $data['payment_method'] ?? null,
-                'status' => BookingStatus::Locked,
+                // Instantané : confirmée tout de suite. Sur demande : le loueur répond sous le délai.
+                'status' => $instantane ? BookingStatus::Confirmed : BookingStatus::Locked,
+                'confirmed_at' => $instantane ? now() : null,
                 'days_count' => $days,
                 'subtotal' => $subtotal,
                 'extras_total' => 0,
@@ -240,7 +243,7 @@ class BookingService
                 'commission_amount' => $commission,
                 'commission_rate' => $commissionRate,
                 'cancellation_policy' => $vehicle->cancellation_policy,
-                'locked_until' => now()->addMinutes(10),
+                'locked_until' => $instantane ? null : now()->addMinutes(10),
             ]);
 
             $this->audit->log('booking.created', $booking, null, $booking->toArray(), $customerId);
@@ -263,12 +266,11 @@ class BookingService
                 'paid_at' => now(),
             ]);
 
-            // Après paiement / demande : en attente du commercial / partenaire.
-            $newStatus = BookingStatus::PendingPartner;
+            $newStatus = $this->statutApresPaiement($booking);
 
             $booking->update([
                 'status' => $newStatus,
-                'confirmed_at' => null,
+                'confirmed_at' => $newStatus === BookingStatus::Confirmed ? ($booking->confirmed_at ?? now()) : null,
                 'locked_until' => null,
             ]);
 
@@ -281,20 +283,61 @@ class BookingService
         });
     }
 
-    /** Un encaissement réel est arrivé : la demande passe chez le partenaire. */
+    /** Un encaissement réel est arrivé : confirmée en mode instantané, sinon chez le partenaire. */
     public function marquerPayee(Booking $booking, Payment $payment): void
     {
+        $statut = $this->statutApresPaiement($booking);
         $booking->update([
-            'status' => BookingStatus::PendingPartner,
+            'status' => $statut,
             'payment_method' => $payment->method,
-            'confirmed_at' => null,
+            'confirmed_at' => $statut === BookingStatus::Confirmed ? ($booking->confirmed_at ?? now()) : null,
             'locked_until' => null,
         ]);
 
         $this->audit->log('payment.confirmed', $booking, null, [
             'payment_id' => $payment->id,
-            'status' => BookingStatus::PendingPartner->value,
+            'status' => $statut->value,
         ]);
+    }
+
+    private function statutApresPaiement(Booking $booking): BookingStatus
+    {
+        $actuel = $booking->status instanceof BookingStatus ? $booking->status : BookingStatus::tryFrom((string) $booking->status);
+        if ($actuel === BookingStatus::Confirmed) {
+            return BookingStatus::Confirmed;
+        }
+        $booking->loadMissing('vehicle');
+
+        return $booking->vehicle?->booking_mode === 'instant' ? BookingStatus::Confirmed : BookingStatus::PendingPartner;
+    }
+
+    /**
+     * Sur demande : sans réponse du loueur dans le délai, la demande expire et libère le véhicule.
+     * Un paiement déjà reçu est signalé au journal pour remboursement.
+     *
+     * @return list<Booking>
+     */
+    public function expirerDemandesSansReponse(): array
+    {
+        $limite = now()->subHours((int) config('locagabon.delai_reponse_heures', 12));
+        $reservations = Booking::query()
+            ->whereIn('status', [BookingStatus::Locked->value, BookingStatus::PendingPartner->value, BookingStatus::PendingPayment->value])
+            ->where('created_at', '<=', $limite)
+            ->get();
+
+        foreach ($reservations as $reservation) {
+            $avant = $reservation->toArray();
+            $reservation->update([
+                'status' => BookingStatus::Expired,
+                'cancelled_at' => now(),
+                'cancellation_reason' => 'Le loueur n’a pas répondu dans le délai.',
+                'locked_until' => null,
+            ]);
+            $paye = $reservation->paiements()->where('status', 'paid')->exists();
+            $this->audit->log('booking.expired', $reservation, $avant, $reservation->fresh()->toArray(), null, ['paiement_a_rembourser' => $paye]);
+        }
+
+        return $reservations->all();
     }
 
     /** Confirmation admin / commercial : passe la réservation en confirmée. */

@@ -93,15 +93,25 @@ class Notificateur
     public function demandeCreee(Booking $r): void
     {
         $r->loadMissing(['vehicle', 'partner.owner']);
+        if ($r->status === \App\Enums\BookingStatus::Confirmed) {
+            $this->reservationConfirmee($r);
+            $this->auPartenaire($r->partner, 'booking.new_confirmed', 'nouvelle réservation '.$r->reference, [
+                'Nouvelle réservation confirmée automatiquement (mode instantané) : '.$this->resume($r).'.',
+                'Montant : '.$this->xaf((int) $r->total_amount).'. Les coordonnées du client sont dans le dossier.',
+            ], 'Ouvrir le dossier', '/partenaire/reservations');
+
+            return;
+        }
+
         $this->auClient($r, 'booking.requested', 'demande de réservation '.$r->reference, [
             'Votre demande de réservation est enregistrée : '.$this->resume($r).'.',
-            'Le loueur doit l’accepter. Vous recevrez un e-mail dès sa réponse.',
+            'Le loueur répond sous '.config('locagabon.delai_reponse_heures', 12).' h. Vous recevrez un e-mail dès sa réponse.',
         ], 'Suivre ma réservation', '/mes-reservations');
 
         $this->auPartenaire($r->partner, 'booking.new_request', 'nouvelle demande '.$r->reference, [
             'Nouvelle demande de réservation : '.$this->resume($r).'.',
             'Montant : '.$this->xaf((int) $r->total_amount).'.',
-            'Acceptez-la ou refusez-la depuis votre espace : le véhicule est réservé sur ces dates en attendant votre réponse.',
+            'Acceptez-la ou refusez-la sous '.config('locagabon.delai_reponse_heures', 12).' h : sans réponse, elle expire et le véhicule est libéré.',
         ], 'Répondre à la demande', '/partenaire/reservations');
     }
 
@@ -136,6 +146,19 @@ class Notificateur
         $this->auPartenaire($r->partner, 'booking.cancelled_partner', 'réservation annulée '.$r->reference, [
             'La réservation '.$r->reference.' est annulée'.($par === 'client' ? ' par le client' : ' par l’équipe DOTO').' : '.$this->resume($r).'.',
             'Le véhicule est de nouveau disponible sur ces dates.',
+        ], 'Voir mes réservations', '/partenaire/reservations');
+    }
+
+    public function demandeExpiree(Booking $r): void
+    {
+        $r->loadMissing(['vehicle', 'partner.owner']);
+        $this->auClient($r, 'booking.expired', 'demande expirée '.$r->reference, [
+            'Le loueur n’a pas répondu à temps à votre demande : '.$this->resume($r).'.',
+            'Elle est annulée. Si vous aviez payé, le remboursement est traité par l’équipe DOTO.',
+        ], 'Chercher un autre véhicule', '/vehicules');
+        $this->auPartenaire($r->partner, 'booking.expired_partner', 'demande expirée '.$r->reference, [
+            'La demande '.$r->reference.' a expiré faute de réponse dans le délai : '.$this->resume($r).'.',
+            'Répondre vite aux demandes améliore votre visibilité auprès des clients.',
         ], 'Voir mes réservations', '/partenaire/reservations');
     }
 
