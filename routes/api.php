@@ -5,9 +5,12 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\CatalogController;
 use App\Http\Controllers\Api\ControleurContact;
+use App\Http\Controllers\Api\ControleurMotDePasse;
 use App\Http\Controllers\Api\ControleurPaiement;
 use App\Http\Controllers\Api\LocationController;
+use App\Http\Controllers\Api\Partenaire\ControleurGestionLoueur;
 use App\Http\Controllers\Api\Partenaire\ControleurPartenaire;
+use App\Http\Controllers\Api\Partenaire\ControleurReservationsPartenaire;
 use App\Http\Controllers\Api\VehicleSearchController;
 use Illuminate\Support\Facades\Route;
 
@@ -39,6 +42,8 @@ Route::prefix('v1')->group(function () {
 
     Route::post('/auth/register', [AuthController::class, 'register']);
     Route::post('/auth/login', [AuthController::class, 'login']);
+    Route::post('/auth/mot-de-passe-oublie', [ControleurMotDePasse::class, 'demander'])->middleware('throttle:5,1');
+    Route::post('/auth/reinitialiser-mot-de-passe', [ControleurMotDePasse::class, 'reinitialiser'])->middleware('throttle:10,1');
 
     Route::post('/bookings/guest-lookup', [BookingController::class, 'guestLookup']);
     Route::post('/bookings', [BookingController::class, 'store']);
@@ -79,6 +84,28 @@ Route::prefix('v1')->group(function () {
             // Référentiel marques/modèles partagé (création par tout partenaire, visible partout).
             Route::get('/moi/referentiel', [ControleurPartenaire::class, 'listerReferentiel']);
             Route::post('/moi/referentiel', [ControleurPartenaire::class, 'creerReferentiel']);
+
+            // Dossier de location : réponse à la demande, départ, retour, règlements, caution.
+            Route::get('/moi/reservations/{id}', [ControleurReservationsPartenaire::class, 'afficher'])->whereNumber('id');
+            Route::post('/moi/reservations/{id}/accepter', [ControleurReservationsPartenaire::class, 'accepter'])->whereNumber('id');
+            Route::post('/moi/reservations/{id}/refuser', [ControleurReservationsPartenaire::class, 'refuser'])->whereNumber('id');
+            Route::post('/moi/reservations/{id}/sortie', [ControleurReservationsPartenaire::class, 'sortie'])->whereNumber('id');
+            Route::post('/moi/reservations/{id}/retour', [ControleurReservationsPartenaire::class, 'retour'])->whereNumber('id');
+            Route::post('/moi/reservations/{id}/reglements', [ControleurReservationsPartenaire::class, 'reglement'])->whereNumber('id');
+            Route::post('/moi/reservations/{id}/cautions', [ControleurReservationsPartenaire::class, 'caution'])->whereNumber('id');
+            Route::get('/moi/reservations/{id}/contrat', [ControleurReservationsPartenaire::class, 'contrat'])->whereNumber('id');
+            Route::get('/moi/reservations/{id}/etat-des-lieux', [ControleurReservationsPartenaire::class, 'etatDesLieux'])->whereNumber('id');
+
+            // Gestion : finances, dépenses, entretiens, équipe, exports CSV.
+            Route::get('/moi/finances', [ControleurGestionLoueur::class, 'finances']);
+            Route::post('/moi/depenses', [ControleurGestionLoueur::class, 'enregistrerDepense']);
+            Route::get('/moi/entretiens', [ControleurGestionLoueur::class, 'entretiens']);
+            Route::post('/moi/entretiens/plans', [ControleurGestionLoueur::class, 'creerPlan']);
+            Route::post('/moi/entretiens/interventions/{id}/realiser', [ControleurGestionLoueur::class, 'realiserIntervention'])->whereNumber('id');
+            Route::get('/moi/membres', [ControleurGestionLoueur::class, 'membres']);
+            Route::post('/moi/membres', [ControleurGestionLoueur::class, 'inviterMembre']);
+            Route::delete('/moi/membres/{id}', [ControleurGestionLoueur::class, 'retirerMembre'])->whereNumber('id');
+            Route::get('/moi/exports/{type}', [ControleurGestionLoueur::class, 'exporter'])->whereIn('type', ['reservations', 'mouvements', 'finances', 'entretiens']);
 
             Route::get('/me', [ControleurPartenaire::class, 'moi']);
             Route::get('/me/dashboard', [ControleurPartenaire::class, 'tableauDeBord']);

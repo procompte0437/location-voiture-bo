@@ -73,4 +73,19 @@ class Booking extends Model
     {
         return $this->hasOne(Review::class);
     }
+
+    public function paiements(): HasMany
+    {
+        return $this->hasMany(Payment::class);
+    }
+
+    public function etatsDesLieux(): HasMany
+    {
+        return $this->hasMany(EtatDesLieux::class, 'booking_id');
+    }
+
+    public function mouvementsCaution(): HasMany
+    {
+        return $this->hasMany(MouvementCaution::class, 'booking_id');
+    }
 }

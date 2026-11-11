@@ -52,6 +52,27 @@ class User extends Authenticatable
         return $this->hasMany(Booking::class, 'customer_id');
     }
 
+    public function adhesionPartenaire(): HasOne
+    {
+        return $this->hasOne(MembrePartenaire::class, 'user_id');
+    }
+
+    /** Partenaire dont le compte est responsable, ou à défaut celui qui l’a invité. */
+    public function partenaireRattache(): ?Partner
+    {
+        return $this->ownedPartner ?? $this->adhesionPartenaire?->partenaire;
+    }
+
+    /** Rôle dans l’équipe du partenaire : « responsable » pour le titulaire du compte. */
+    public function roleDansEquipe(): ?string
+    {
+        if ($this->ownedPartner) {
+            return 'responsable';
+        }
+
+        return $this->adhesionPartenaire?->role;
+    }
+
     public function isAdmin(): bool
     {
         return $this->role?->isAdmin() ?? false;

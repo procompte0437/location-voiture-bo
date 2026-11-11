@@ -30,7 +30,7 @@ class ControleurPartenaire extends Controller
      */
     private function partenaireDuCompte(Request $requete): Partner
     {
-        $partenaire = $requete->user()?->ownedPartner;
+        $partenaire = $requete->user()?->partenaireRattache();
 
         if (! $partenaire) {
             abort(response()->json([
